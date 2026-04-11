@@ -53,10 +53,20 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         setupPlayerListener()
     }
 
-    // ✅ Запуск MediaSession сервиса
+    private var selectedParser: MusicParser = PesniParser()
 
+    fun setParser(parserName: String) {
+        selectedParser = when (parserName) {
+            "Zvukofon.com" -> ZvukofonParser()
+            else -> PesniParser()
+        }
+        println("🔄 Parser changed to: ${selectedParser.name}")
+    }
 
-    // ✅ Обновление метаданных трека для уведомления
+    fun getAvailableParsers(): List<String> {
+        return listOf("Pesni.me", "Zvukofon.com")
+    }
+
     fun updateMediaMetadata(title: String, artist: String = "Dystopia Music", coverUrl: String? = null) {
         // MediaSession автоматически обновит уведомление при изменении трека
         // ExoPlayer сам обрабатывает это через MediaMetadata
@@ -214,14 +224,17 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, searchResults = emptyList(), error = null)
             try {
-                val results = parser.searchTracks(q)
+                val results = selectedParser.searchTracks(q)  // ✅ Используем selectedParser
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     searchResults = results,
-                    error = if (results.isEmpty()) "Ничего не найдено" else null
+                    error = if (results.isEmpty()) "Ничего не найдено в ${selectedParser.name}" else null
                 )
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Ошибка ${selectedParser.name}: ${e.message}"
+                )
             }
         }
     }
@@ -230,7 +243,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isFetchingDetails = true, error = null)
             try {
-                val trackInfo = parser.getTrackDetails(result.pageUrl)
+                val trackInfo = selectedParser.getTrackDetails(result.pageUrl)
+
                 var finalTrack = trackInfo
 
                 if (context != null) {

@@ -16,10 +16,14 @@ import coil.compose.AsyncImage
 import com.example.dystopia.MusicViewModel
 import com.example.dystopia.data.SearchResult
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(viewModel: MusicViewModel) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    val parsers = viewModel.getAvailableParsers()
+    var expanded by remember { mutableStateOf(false) }
+    var selectedParser by remember { mutableStateOf("Pesni.me") }
 
     Column(
         modifier = Modifier
@@ -27,9 +31,43 @@ fun HomeScreen(viewModel: MusicViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.Top
     ) {
-        // ✅ Отступ сверху
         Spacer(modifier = Modifier.height(48.dp))
 
+        // ✅ Выбор парсера
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { expanded = !expanded }
+        ) {
+            OutlinedTextField(
+                value = selectedParser,
+                onValueChange = {},
+                label = { Text("Источник поиска") },
+                readOnly = true,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                modifier = Modifier
+                    .menuAnchor()
+                    .fillMaxWidth()
+            )
+            ExposedDropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false }
+            ) {
+                parsers.forEach { parser ->
+                    DropdownMenuItem(
+                        text = { Text(parser) },
+                        onClick = {
+                            selectedParser = parser
+                            viewModel.setParser(parser)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // Строка поиска (без изменений)
         OutlinedTextField(
             value = state.query,
             onValueChange = { viewModel.updateQuery(it) },
@@ -38,7 +76,7 @@ fun HomeScreen(viewModel: MusicViewModel) {
             singleLine = true
         )
 
-        Spacer(Modifier.height(12.dp))
+        // ... остальной код без изменений ...
 
         Button(
             onClick = { viewModel.searchTracks(state.query) },

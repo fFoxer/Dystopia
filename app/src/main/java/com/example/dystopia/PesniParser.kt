@@ -1,5 +1,6 @@
 package com.example.dystopia.data
 
+import com.example.dystopia.MusicParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -23,7 +24,8 @@ data class TrackInfo(
     val isOffline: Boolean = false
 )
 
-class PesniParser {
+class PesniParser : MusicParser {
+    override val name: String = "Pesni.me"
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
@@ -38,7 +40,7 @@ class PesniParser {
         .build()
 
     // 🔍 1. Быстрый поиск списка треков
-    suspend fun searchTracks(query: String): List<SearchResult> = withContext(Dispatchers.IO) {
+    override suspend fun searchTracks(query: String): List<SearchResult> = withContext(Dispatchers.IO) {
         val encoded = URLEncoder.encode(query, "UTF-8")
         val req = Request.Builder().url("$baseUrl/search/$encoded").headers(headers).build()
         val resp = client.newCall(req).execute()
@@ -66,7 +68,7 @@ class PesniParser {
     }
 
     // 🎵 2. Загрузка деталей конкретного трека
-    suspend fun getTrackDetails(pageUrl: String): TrackInfo = withContext(Dispatchers.IO) {
+    override suspend fun getTrackDetails(pageUrl: String): TrackInfo = withContext(Dispatchers.IO) {
         val req = Request.Builder().url(pageUrl).headers(headers).build()
         val resp = client.newCall(req).execute()
         if (!resp.isSuccessful) throw Exception("Ошибка загрузки трека: ${resp.code}")
