@@ -25,7 +25,9 @@ class MusicService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
 
-        mediaSession = MediaSession.Builder(this, player)
+
+
+        mediaSession = MediaSession.Builder(this, player!!)
             .setSessionActivity(
                 PendingIntent.getActivity(
                     this, 0,
