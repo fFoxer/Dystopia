@@ -20,6 +20,10 @@ import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import android.widget.Toast
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 
 
 enum class RepeatMode { NONE, ONE, ALL }
@@ -110,7 +114,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             isServiceStarted = true
         }
     }
-    private var selectedParser: MusicParser = PesniParser()
+    private var selectedParser: MusicParser = ZvukofonParser() // ✅ Zvukofon теперь по умолчанию
 
 
     fun setParser(parserName: String) {
@@ -122,7 +126,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun getAvailableParsers(): List<String> {
-        return listOf("Pesni.me", "Zvukofon.com")
+        return listOf("Zvukofon.com", "Pesni.me")
     }
 
     fun updateMediaMetadata(title: String, artist: String = "Dystopia Music", coverUrl: String? = null) {
@@ -627,6 +631,52 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 currentTrack = track.copy(isOffline = !success)
             )
         }
+    }
+    // ✅ Синхронизирует UI с запущенным MediaSession при возврате в приложение
+    fun syncUiWithMediaSession() {
+        viewModelScope.launch {
+            var controller = player.controller
+
+            // Ждём подключения
+            for (i in 0 until 15) {
+                if (controller != null) break
+                delay(100)
+                controller = player.controller
+            }
+
+            if (controller == null) return@launch
+            if (controller.playbackState == androidx.media3.common.Player.STATE_IDLE) return@launch
+
+            val item = controller.currentMediaItem ?: return@launch
+            val meta = item.mediaMetadata
+
+            // ✅ Берем обложку из MusicPlayer.currentCover (она уже загружена)
+            val currentCoverUri = player.currentCover.value
+
+            // ✅ Или из метаданных, если в player нет
+            val coverUrl = currentCoverUri ?: meta.artworkUri?.toString()
+
+            // ✅ Или загружаем через iTunes если вообще нет
+            val finalCoverUrl = coverUrl ?: getCoverUrl(meta.title?.toString() ?: "")
+
+            _uiState.value = _uiState.value.copy(
+                currentTrack = TrackInfo(
+                    title = meta.title?.toString() ?: "Unknown Track",
+                    url = item.localConfiguration?.uri?.toString() ?: "",
+                    coverUrl = finalCoverUrl,  // ✅ Сохраняем обложку
+                    isOffline = false
+                )
+            )
+
+            println("🔄 UI synced: ${meta.title} | Cover: $finalCoverUrl")
+        }
+    }
+    // ✅ Поток для сигналов сброса навигации
+    private val _resetNavigation = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val resetNavigation: SharedFlow<Unit> = _resetNavigation.asSharedFlow()
+
+    fun requestNavigationReset() {
+        viewModelScope.launch { _resetNavigation.emit(Unit) }
     }
 
     override fun onCleared() {

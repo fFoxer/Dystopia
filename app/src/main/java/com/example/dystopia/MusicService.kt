@@ -25,16 +25,23 @@ class MusicService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
 
+        // ✅ Создаём Intent с правильными флагами
+        val intent = Intent(this, MainActivity::class.java).apply {
+            // Поднимает существующий Activity, не создавая дубликаты
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            // Помечаем, что запуск был из уведомления
+            putExtra("FROM_NOTIFICATION", true)
+        }
 
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
 
-        mediaSession = MediaSession.Builder(this, player!!)
-            .setSessionActivity(
-                PendingIntent.getActivity(
-                    this, 0,
-                    Intent(this, MainActivity::class.java),
-                    PendingIntent.FLAG_IMMUTABLE
-                )
-            )
+        mediaSession = MediaSession.Builder(this, player)
+            .setSessionActivity(pendingIntent)
             .build()
     }
 

@@ -23,7 +23,7 @@ fun HomeScreen(viewModel: MusicViewModel) {
     val context = LocalContext.current
     val parsers = viewModel.getAvailableParsers()
     var expanded by remember { mutableStateOf(false) }
-    var selectedParser by remember { mutableStateOf("Pesni.me") }
+    var selectedParser by remember { mutableStateOf("Zvukofon.com") } // ✅ UI тоже покажет Zvukofon
 
     Column(
         modifier = Modifier

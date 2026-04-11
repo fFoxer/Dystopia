@@ -1,6 +1,7 @@
 package com.example.dystopia
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -24,27 +25,28 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Запрос разрешений
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val permissionLauncher = registerForActivityResult(
-                ActivityResultContracts.RequestPermission()
-            ) { isGranted ->
-                if (isGranted) println("✅ Notifications allowed")
-            }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
+        // ✅ Проверяем запуск из уведомления сразу при создании
+        if (intent?.getBooleanExtra("FROM_NOTIFICATION", false) == true) {
+            viewModel.requestNavigationReset()
         }
 
         setContent {
             DystopiaTheme(darkTheme = true) {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     MainScreen(viewModel)
                 }
             }
+        }
+
+        viewModel.syncUiWithMediaSession()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra("FROM_NOTIFICATION", false)) {
+            viewModel.requestNavigationReset()
+            // Убираем флаг, чтобы сброс не срабатывал при повороте экрана
+            intent.removeExtra("FROM_NOTIFICATION")
         }
     }
 
@@ -52,5 +54,6 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.syncFromService()
+        viewModel.syncUiWithMediaSession()
     }
 }

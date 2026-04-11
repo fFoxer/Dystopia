@@ -25,6 +25,13 @@ fun MainScreen(viewModel: MusicViewModel) {
     val isPlaying by viewModel.player.isPlaying.collectAsState()
     var showFullPlayer by remember { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) {
+        viewModel.resetNavigation.collect {
+            selectedTab = 0          // Переходим на вкладку "Поиск"
+            showFullPlayer = false   // Закрываем полный плеер
+        }
+    }
+
     Scaffold(
         bottomBar = {
             Column {
