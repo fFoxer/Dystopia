@@ -7,7 +7,7 @@ import java.io.File
 object OfflineManager {
     private const val PREFS_NAME = "offline_tracks"
     private const val KEY_PREFIX = "track_"
-    private const val MUSIC_FOLDER = "offline_music"  // ✅ Правильная папка
+    private const val MUSIC_FOLDER = "offline_music"
 
     fun getOfflinePath(context: Context, trackTitle: String): String? {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -21,7 +21,6 @@ object OfflineManager {
         println("   File name from prefs: $fileName")
 
         if (fileName != null) {
-            // ✅ Используем правильную папку offline_music
             val musicDir = File(context.filesDir, MUSIC_FOLDER)
             println("   Music dir: $musicDir")
 

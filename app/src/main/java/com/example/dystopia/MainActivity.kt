@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // ✅ Проверяем запуск из уведомления сразу при создании
+
         if (intent?.getBooleanExtra("FROM_NOTIFICATION", false) == true) {
             viewModel.requestNavigationReset()
         }
@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // ✅ Восстанавливаем состояние при возврате в приложение
+
     override fun onResume() {
         super.onResume()
         viewModel.syncFromService()

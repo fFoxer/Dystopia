@@ -31,7 +31,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
     val state by viewModel.uiState.collectAsState()
     val currentTrack = state.currentTrack
 
-    // ✅ Берем обложку из MediaMetadata
+
     val coverUri by viewModel.player.currentCover.collectAsState()
 
     val context = LocalContext.current
@@ -86,7 +86,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // 📀 Обложка (из MediaMetadata)
+
             item {
                 Spacer(Modifier.height(16.dp))
                 Box(
@@ -123,7 +123,6 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                 }
             }
 
-            // 🎵 Информация о треке
             item {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -145,7 +144,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                 }
             }
 
-            // ⏱️ Прогресс-бар
+
             item {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
@@ -186,7 +185,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                 }
             }
 
-            // ▶️ Кнопки управления
+
             item {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -214,7 +213,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                         )
                     }
 
-                    // Предыдущий
+
                     IconButton(
                         onClick = { viewModel.playPrevious() },
                         modifier = Modifier.size(56.dp)
@@ -227,7 +226,6 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                         )
                     }
 
-                    // Play/Pause
                     FloatingActionButton(
                         onClick = { viewModel.togglePlay() },
                         modifier = Modifier.size(72.dp),
@@ -242,7 +240,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                         )
                     }
 
-                    // Следующий
+
                     IconButton(
                         onClick = { viewModel.playNext() },
                         modifier = Modifier.size(56.dp)
@@ -255,7 +253,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                         )
                     }
 
-                    // Перемешать
+
                     IconButton(
                         onClick = { viewModel.toggleShuffle() },
                         modifier = Modifier.size(48.dp)
@@ -273,7 +271,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                 }
             }
 
-            // 📥 Кнопки действий
+
             item {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(24.dp),
@@ -282,7 +280,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                     var showDeleteDialog by remember { mutableStateOf(false) }
                     var showPlaylistDialog by remember { mutableStateOf(false) }
 
-                    // Скачать/Удалить
+
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
@@ -324,7 +322,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                         )
                     }
 
-                    // Добавить в плейлист
+
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {

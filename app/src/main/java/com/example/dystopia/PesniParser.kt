@@ -52,7 +52,7 @@ class PesniParser : MusicParser {
         return@withContext doc.select("a[href*='/track/']")
             .map { el ->
                 val originalTitle = el.attr("title").ifBlank { el.text().trim() }
-                val cleaned = originalTitle.cleanTitle() // ✅ Очищаем
+                val cleaned = originalTitle.cleanTitle()
 
                 val href = el.attr("href")
                 val pageUrl = if (href.startsWith("http")) href else "$baseUrl$href"
@@ -115,7 +115,7 @@ class PesniParser : MusicParser {
         TrackInfo(title = title, url = finalUrl, coverUrl = coverUrl)
     }
 
-    // ✅ Функция очистки названия трека
+
     private fun String.cleanTitle(): String {
         return this
             // Удаляем фразы типа "слушать песню онлайн", "скачать бесплатно" и т.д.

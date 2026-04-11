@@ -1,23 +1,23 @@
 [versions]
 # 📦 Основные
-agp = "8.5.2"              # ← Оставляем твой текущий
+agp = "8.5.2"
 kotlin = "2.0.21"
 ksp = "2.0.21-1.0.28"
 
-# 🎨 Compose (стабильные версии для AGP 8.5.2)
-composeBom = "2024.09.00"  # ← Ключевое изменение!
+
+composeBom = "2024.09.00"
 activityCompose = "1.9.3"
 lifecycleRuntimeKtx = "2.8.7"
 
-# 📱 AndroidX (совместимые версии)
+
 coreKtx = "1.13.1"
 appcompat = "1.7.0"
 material = "1.12.0"
 
-# 🗄️ Room
+
 room = "2.6.1"
 
-# 🧪 Тесты
+
 junit = "4.13.2"
 junitVersion = "1.2.1"
 espressoCore = "3.6.1"

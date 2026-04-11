@@ -47,7 +47,6 @@ interface PlaylistDao {
     @Delete
     suspend fun deletePlaylist(playlist: Playlist)
 
-    // ✅ Для удаления трека из плейлиста
     @Query("DELETE FROM playlist_tracks WHERE playlistId = :playlistId AND trackUrl = :trackUrl")
     suspend fun removeTrackFromPlaylist(playlistId: Long, trackUrl: String)
 }

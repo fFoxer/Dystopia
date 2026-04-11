@@ -50,8 +50,6 @@ class MusicPlayer(context: Context) {
                 // ExoPlayer извлёк встроенную обложку из MP3
                 val embeddedUri = mediaMetadata.artworkUri?.toString()
 
-                // ✅ Если есть встроенная — используем её (она точнее)
-                // Если нет — оставляем ту что из iTunes
                 if (!embeddedUri.isNullOrBlank()) {
                     _currentCover.value = embeddedUri
                 }
@@ -63,12 +61,12 @@ class MusicPlayer(context: Context) {
         url: String,
         title: String,
         artist: String = "Dystopia Music",
-        coverUrl: String? = null,  // ✅ Вернули параметр
+        coverUrl: String? = null,
         playlist: List<MediaItem>? = null
     ) {
         val controller = controller ?: return
 
-        // ✅ Сначала устанавливаем обложку из iTunes (если есть)
+
         val metadataBuilder = MediaMetadata.Builder()
             .setTitle(title)
             .setArtist(artist)
@@ -95,7 +93,7 @@ class MusicPlayer(context: Context) {
         controller.prepare()
         controller.play()
 
-        // ✅ Если передали coverUrl, сразу обновляем поток
+
         if (coverUrl != null) {
             _currentCover.value = coverUrl
         }

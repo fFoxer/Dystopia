@@ -79,25 +79,24 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 })
             }
         }
-        // ✅ Синхронизируем состояние при старте
+
         syncFromService()
     }
 
-    // ✅ Восстанавливает currentTrack из сервиса при возврате в приложение
-    // ✅ Восстанавливает состояние из MediaSession
+
     fun syncFromService() {
-        val controller = player.controller ?: return  // ✅ Исправлено
+        val controller = player.controller ?: return
 
         viewModelScope.launch {
             val item = controller.currentMediaItem
             if (item != null) {
-                val metadata = item.mediaMetadata  // ✅ Исправлено
+                val metadata = item.mediaMetadata
                 val title = metadata.title?.toString() ?: return@launch
 
                 _uiState.value = _uiState.value.copy(
                     currentTrack = TrackInfo(
                         title = title,
-                        url = item.localConfiguration?.uri?.toString() ?: "",  // ✅ Исправлено
+                        url = item.localConfiguration?.uri?.toString() ?: "",
                         coverUrl = metadata.artworkUri?.toString(),
                         isOffline = false
                     )
@@ -114,7 +113,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             isServiceStarted = true
         }
     }
-    private var selectedParser: MusicParser = ZvukofonParser() // ✅ Zvukofon теперь по умолчанию
+    private var selectedParser: MusicParser = ZvukofonParser()
 
 
     fun setParser(parserName: String) {
@@ -130,18 +129,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateMediaMetadata(title: String, artist: String = "Dystopia Music", coverUrl: String? = null) {
-        // MediaSession автоматически обновит уведомление при изменении трека
-        // ExoPlayer сам обрабатывает это через MediaMetadata
     }
     private fun setupPlayerListener() {
-        // Ждём подключения к сервису
+
         viewModelScope.launch {
-            // Обработчик конца трека теперь в MusicService или через Flow
-            // Для простоты можно убрать отсюда и полагаться на UI
+
         }
     }
 
-    // === НАВИГАЦИЯ И АВТОПЛЕЙ ===
+
 
     private fun getNavigationQueue(state: UiState): List<Int> {
         return if (state.shuffleEnabled && state.shuffledPlaylistIndices.isNotEmpty()) {
@@ -250,8 +246,6 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         playTrack(TrackInfo(track.title, track.trackUrl), getApplication())
     }
 
-    // === ПУБЛИЧНЫЕ МЕТОДЫ ===
-
     fun updateQuery(q: String) {
         _uiState.value = _uiState.value.copy(query = q)
     }
@@ -289,7 +283,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, searchResults = emptyList(), error = null)
             try {
-                val results = selectedParser.searchTracks(q)  // ✅ Используем selectedParser
+                val results = selectedParser.searchTracks(q)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     searchResults = results,
@@ -319,10 +313,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // ✅ Запускаем сервис
+
                 if (context != null) startMediaService(context)
 
-                // ✅ Получаем обложку
+
                 val cover = finalTrack.coverUrl ?: getCoverUrl(finalTrack.title)
                 val finalTrackWithCover = finalTrack.copy(coverUrl = cover)
 
@@ -331,7 +325,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     currentTrack = finalTrackWithCover
                 )
 
-                // ✅ Передаем ВСЕ параметры в play()
+
                 player.play(
                     url = finalTrackWithCover.url,
                     title = finalTrackWithCover.title,
@@ -422,11 +416,11 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val tracks = dao.getTracksByPlaylist(playlist.id)
 
-            // ✅ Проверяем какие треки скачаны
+
             val context = getApplication<Application>().applicationContext
             val tracksWithOfflineStatus = tracks.map { track ->
                 val isOffline = OfflineManager.isOffline(context, track.title)
-                track // В базе нет поля isOffline, но мы можем проверить наличие файла
+                track
             }
 
             _uiState.value = _uiState.value.copy(
@@ -484,7 +478,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
             val coverUrl = getCoverUrl(track.title)
 
-            // ✅ Создаём список всех треков для MediaSession
+
             val mediaItems: List<MediaItem> = tracks.map { t ->
                 val itemUrl = if (OfflineManager.isOffline(context, t.title)) {
                     OfflineManager.getOfflinePath(context, t.title) ?: t.trackUrl
@@ -523,7 +517,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 playedIndices = mutableSetOf()
             )
 
-            // ✅ Передаём весь плейлист
+
             player.play(
                 url = finalUrl,
                 title = track.title,
@@ -632,7 +626,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
-    // ✅ Синхронизирует UI с запущенным MediaSession при возврате в приложение
+
     fun syncUiWithMediaSession() {
         viewModelScope.launch {
             var controller = player.controller
@@ -650,13 +644,13 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             val item = controller.currentMediaItem ?: return@launch
             val meta = item.mediaMetadata
 
-            // ✅ Берем обложку из MusicPlayer.currentCover (она уже загружена)
+
             val currentCoverUri = player.currentCover.value
 
-            // ✅ Или из метаданных, если в player нет
+
             val coverUrl = currentCoverUri ?: meta.artworkUri?.toString()
 
-            // ✅ Или загружаем через iTunes если вообще нет
+
             val finalCoverUrl = coverUrl ?: getCoverUrl(meta.title?.toString() ?: "")
 
             _uiState.value = _uiState.value.copy(
@@ -671,7 +665,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             println("🔄 UI synced: ${meta.title} | Cover: $finalCoverUrl")
         }
     }
-    // ✅ Поток для сигналов сброса навигации
+
     private val _resetNavigation = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val resetNavigation: SharedFlow<Unit> = _resetNavigation.asSharedFlow()
 

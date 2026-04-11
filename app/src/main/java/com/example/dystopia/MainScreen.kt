@@ -27,15 +27,14 @@ fun MainScreen(viewModel: MusicViewModel) {
 
     LaunchedEffect(Unit) {
         viewModel.resetNavigation.collect {
-            selectedTab = 0          // Переходим на вкладку "Поиск"
-            showFullPlayer = false   // Закрываем полный плеер
+            selectedTab = 0
+            showFullPlayer = false
         }
     }
 
     Scaffold(
         bottomBar = {
             Column {
-                // ✅ Показываем мини-плеер если есть трек
                 if (state.currentTrack != null) {
                     MiniPlayer(
                         viewModel = viewModel,
@@ -145,7 +144,6 @@ fun MiniPlayer(
                 )
             }
 
-            // ▶️ Кнопка Play/Pause
             IconButton(
                 onClick = { viewModel.togglePlay() },
                 modifier = Modifier.size(48.dp)

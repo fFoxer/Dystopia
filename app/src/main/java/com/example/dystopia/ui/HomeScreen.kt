@@ -23,7 +23,7 @@ fun HomeScreen(viewModel: MusicViewModel) {
     val context = LocalContext.current
     val parsers = viewModel.getAvailableParsers()
     var expanded by remember { mutableStateOf(false) }
-    var selectedParser by remember { mutableStateOf("Zvukofon.com") } // ✅ UI тоже покажет Zvukofon
+    var selectedParser by remember { mutableStateOf("Zvukofon.com") }
 
     Column(
         modifier = Modifier
@@ -33,7 +33,7 @@ fun HomeScreen(viewModel: MusicViewModel) {
     ) {
         Spacer(modifier = Modifier.height(48.dp))
 
-        // ✅ Выбор парсера
+
         ExposedDropdownMenuBox(
             expanded = expanded,
             onExpandedChange = { expanded = !expanded }
@@ -76,7 +76,6 @@ fun HomeScreen(viewModel: MusicViewModel) {
             singleLine = true
         )
 
-        // ... остальной код без изменений ...
 
         Button(
             onClick = { viewModel.searchTracks(state.query) },

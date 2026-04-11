@@ -275,7 +275,7 @@ fun TrackListItemSimple(
     val state by viewModel.uiState.collectAsState()
     val isCurrentTrack = state.currentTrack?.title == track.title && state.selectedPlaylist?.id == playlist.id
 
-    // ✅ Проверяем наличие файла при каждом рендере
+
     val isOffline by remember(track.title) {
         derivedStateOf {
             OfflineManager.isOffline(context, track.title)
@@ -315,7 +315,7 @@ fun TrackListItemSimple(
                     Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
-                // ✅ Иконка скачанного трека
+
                 if (isOffline) {
                     Icon(
                         Icons.Default.Download,
