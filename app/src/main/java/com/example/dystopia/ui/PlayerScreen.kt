@@ -3,6 +3,7 @@ package com.example.dystopia.ui
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -25,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.ui.text.style.TextAlign
 import androidx.media3.common.C
 import kotlinx.coroutines.delay
 
@@ -88,9 +90,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
     val state by viewModel.uiState.collectAsState()
     val currentTrack = state.currentTrack
     val context = LocalContext.current
-    LaunchedEffect(currentTrack) {
 
-    }
     if (currentTrack == null) { onBack(); return }
 
     var sliderPosition by remember { mutableFloatStateOf(0f) }
@@ -120,105 +120,325 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Сейчас играет") }, navigationIcon = {
-                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Назад") }
-            })
+            TopAppBar(
+                title = { Text("Сейчас играет") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, "Назад")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
+            )
         }
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween) {
-            Spacer(Modifier.height(32.dp))
-            Box(modifier = Modifier.size(280.dp).clip(RoundedCornerShape(16.dp)).background(if (currentTrack.coverUrl != null) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
-                if (!currentTrack.coverUrl.isNullOrBlank()) {
-                    AsyncImage(model = currentTrack.coverUrl, contentDescription = "Cover", modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop, placeholder = painterResource(android.R.drawable.ic_menu_gallery), error = painterResource(android.R.drawable.ic_menu_gallery))
-                } else {
-                    Icon(Icons.Default.MusicNote, null, modifier = Modifier.size(120.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                }
-            }
-            Spacer(Modifier.height(32.dp))
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(text = currentTrack.title, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(text = "Dystopia Music", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Spacer(Modifier.height(24.dp))
-            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(text = formatTime((sliderPosition * duration).toLong()), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(text = formatTime(duration), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Slider(value = sliderPosition, onValueChange = { sliderPosition = it; isDragging = true }, onValueChangeFinished = { isDragging = false; viewModel.player.player.seekTo((sliderPosition * duration).toLong()) }, modifier = Modifier.fillMaxWidth(), colors = SliderDefaults.colors(thumbColor = MaterialTheme.colorScheme.primary, activeTrackColor = MaterialTheme.colorScheme.primary, inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant))
-            }
-            Spacer(Modifier.height(24.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                val playerState = viewModel.uiState.collectAsState().value
-                IconButton(onClick = { viewModel.toggleRepeat() }) {
-                    Icon(imageVector = when (playerState.repeatMode) { RepeatMode.NONE -> Icons.Default.Repeat; RepeatMode.ONE -> Icons.Default.RepeatOne; RepeatMode.ALL -> Icons.Default.Repeat }, contentDescription = "Repeat mode", tint = if (playerState.repeatMode != RepeatMode.NONE) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                IconButton(onClick = { viewModel.playPrevious() }) { Icon(Icons.Default.SkipPrevious, "Previous", tint = MaterialTheme.colorScheme.onSurface) }
-                FloatingActionButton(onClick = { viewModel.togglePlay() }, modifier = Modifier.size(72.dp), shape = CircleShape, containerColor = MaterialTheme.colorScheme.primary) {
-                    Icon(imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = if (isPlaying) "Pause" else "Play", tint = Color.White, modifier = Modifier.size(36.dp))
-                }
-                IconButton(onClick = { viewModel.playNext() }) { Icon(Icons.Default.SkipNext, "Next", tint = MaterialTheme.colorScheme.onSurface) }
-                IconButton(onClick = { viewModel.toggleShuffle() }) {
-                    Icon(imageVector = Icons.Default.Shuffle, contentDescription = "Shuffle", tint = if (playerState.shuffleEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            Spacer(Modifier.height(24.dp))
-
-            // 🔘 Действия (только Скачать/Удалить и Плейлист)
-            var showDeleteDialog by remember { mutableStateOf(false) }
-            var showPlaylistDialog by remember { mutableStateOf(false) }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                // 🔄 Кнопка Скачать / Удалить
-                IconButton(
-                    onClick = {
-                        if (currentTrack.isOffline) {
-                            showDeleteDialog = true
-                        } else {
-                            Toast.makeText(context, "Скачивание...", Toast.LENGTH_SHORT).show()
-                            viewModel.downloadTrack(context, currentTrack)
-                        }
-                    }
+        // ✅ Адаптивная прокрутка
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
+            // 📀 Обложка
+            item {
+                Spacer(Modifier.height(16.dp))
+                Box(
+                    modifier = Modifier
+                        .size(280.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            if (currentTrack.coverUrl != null)
+                                MaterialTheme.colorScheme.surface
+                            else
+                                MaterialTheme.colorScheme.primaryContainer
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = if (currentTrack.isOffline) Icons.Default.Delete else Icons.Default.Download,
-                        contentDescription = if (currentTrack.isOffline) "Удалить" else "Скачать",
-                        tint = if (currentTrack.isOffline) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                    if (!currentTrack.coverUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = currentTrack.coverUrl,
+                            contentDescription = "Cover",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(16.dp)),
+                            contentScale = ContentScale.Crop,
+                            placeholder = painterResource(android.R.drawable.ic_menu_gallery),
+                            error = painterResource(android.R.drawable.ic_menu_gallery)
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.MusicNote,
+                            null,
+                            modifier = Modifier.size(120.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+
+            // 🎵 Информация о треке
+            item {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = currentTrack.title,
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        text = "Dystopia Music",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+            }
 
-                // 📋 Добавить в плейлист
-                IconButton(onClick = { showPlaylistDialog = true }) {
-                    Icon(Icons.Default.PlaylistAdd, "Add to playlist", tint = MaterialTheme.colorScheme.onSurface)
+            // ⏱️ Прогресс-бар
+            item {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = formatTime((sliderPosition * duration).toLong()),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = formatTime(duration),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Slider(
+                        value = sliderPosition,
+                        onValueChange = {
+                            sliderPosition = it
+                            isDragging = true
+                        },
+                        onValueChangeFinished = {
+                            isDragging = false
+                            viewModel.player.player.seekTo((sliderPosition * duration).toLong())
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    )
                 }
             }
 
-            // ✅ Диалог подтверждения удаления
-            if (showDeleteDialog) {
-                AlertDialog(
-                    onDismissRequest = { showDeleteDialog = false },
-                    title = { Text("Удалить трек?") },
-                    text = { Text("Файл будет удалён с устройства.") },
-                    confirmButton = {
-                        TextButton(onClick = {
-                            viewModel.deleteOfflineTrack(context, currentTrack)
-                            showDeleteDialog = false
-                        }) {
-                            Text("Удалить", color = MaterialTheme.colorScheme.error)
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showDeleteDialog = false }) { Text("Отмена") }
+            // ▶️ Кнопки управления
+            item {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val playerState = viewModel.uiState.collectAsState().value
+
+                    // Повтор
+                    IconButton(
+                        onClick = { viewModel.toggleRepeat() },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = when (playerState.repeatMode) {
+                                RepeatMode.NONE -> Icons.Default.Repeat
+                                RepeatMode.ONE -> Icons.Default.RepeatOne
+                                RepeatMode.ALL -> Icons.Default.Repeat
+                            },
+                            contentDescription = "Repeat mode",
+                            tint = if (playerState.repeatMode != RepeatMode.NONE)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(32.dp)
+                        )
                     }
-                )
+
+                    // Предыдущий
+                    IconButton(
+                        onClick = { viewModel.playPrevious() },
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.SkipPrevious,
+                            "Previous",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
+
+                    // Play/Pause
+                    FloatingActionButton(
+                        onClick = { viewModel.togglePlay() },
+                        modifier = Modifier.size(72.dp),
+                        shape = CircleShape,
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            tint = Color.White,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
+
+                    // Следующий
+                    IconButton(
+                        onClick = { viewModel.playNext() },
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.SkipNext,
+                            "Next",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
+
+                    // Перемешать
+                    IconButton(
+                        onClick = { viewModel.toggleShuffle() },
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = "Shuffle",
+                            tint = if (playerState.shuffleEnabled)
+                                MaterialTheme.colorScheme.primary
+                            else
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
             }
 
-            // ✅ Диалог добавления в плейлист
-            if (showPlaylistDialog) {
-                AddToPlaylistDialog(viewModel, currentTrack, onDismiss = { showPlaylistDialog = false })
+            // 📥 Кнопки действий (Скачать и Плейлист)
+            item {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    var showDeleteDialog by remember { mutableStateOf(false) }
+                    var showPlaylistDialog by remember { mutableStateOf(false) }
+
+                    // Скачать/Удалить
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        IconButton(
+                            onClick = {
+                                if (currentTrack.isOffline) {
+                                    showDeleteDialog = true
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "Скачивание...",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    viewModel.downloadTrack(context, currentTrack)
+                                }
+                            },
+                            modifier = Modifier.size(56.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (currentTrack.isOffline)
+                                    Icons.Default.Delete
+                                else
+                                    Icons.Default.Download,
+                                contentDescription = if (currentTrack.isOffline)
+                                    "Удалить"
+                                else
+                                    "Скачать",
+                                tint = if (currentTrack.isOffline)
+                                    MaterialTheme.colorScheme.error
+                                else
+                                    MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                        Text(
+                            text = if (currentTrack.isOffline) "Удалить" else "Скачать",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // Добавить в плейлист
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        IconButton(
+                            onClick = { showPlaylistDialog = true },
+                            modifier = Modifier.size(56.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.PlaylistAdd,
+                                "Add to playlist",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                        Text(
+                            text = "В плейлист",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (showPlaylistDialog) {
+                        AddToPlaylistDialog(
+                            viewModel,
+                            currentTrack,
+                            onDismiss = { showPlaylistDialog = false }
+                        )
+                    }
+
+                    if (showDeleteDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showDeleteDialog = false },
+                            title = { Text("Удалить трек?") },
+                            text = { Text("Файл будет удалён с устройства.") },
+                            confirmButton = {
+                                TextButton(
+                                    onClick = {
+                                        viewModel.deleteOfflineTrack(context, currentTrack)
+                                        showDeleteDialog = false
+                                    }
+                                ) {
+                                    Text("Удалить", color = MaterialTheme.colorScheme.error)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showDeleteDialog = false }) {
+                                    Text("Отмена")
+                                }
+                            }
+                        )
+                    }
+                }
             }
 
-            Spacer(Modifier.height(16.dp))
+            item {
+                Spacer(Modifier.height(32.dp))
+            }
         }
     }
 }
