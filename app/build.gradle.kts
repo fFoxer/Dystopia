@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.dystopia"
         minSdk = 24
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "1.2"
     }
 
     buildTypes {
@@ -68,5 +68,7 @@ dependencies {
     // Coil для загрузки изображений
     implementation("io.coil-kt:coil-compose:2.5.0")
     implementation("com.google.code.gson:gson:2.10.1")
-    // Media3 для уведомлений и MediaSession
+    implementation("org.jsoup:jsoup:1.17.2")
+    implementation("androidx.media3:media3-session:1.2.0")
+
 }

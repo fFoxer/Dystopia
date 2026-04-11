@@ -2,6 +2,8 @@ package com.example.dystopia
 
 import android.app.Application
 import android.content.Context
+import android.net.Uri
+import android.widget.MediaController
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.dystopia.data.*
@@ -14,6 +16,11 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import androidx.core.content.ContextCompat
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
+import android.widget.Toast
+
 
 enum class RepeatMode { NONE, ONE, ALL }
 
@@ -50,25 +57,84 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         loadPlaylists()
-        setupPlayerListener()
+        fun setupPlayerListener() {
+            viewModelScope.launch {
+                // Ждём подключения к сервису
+                kotlinx.coroutines.delay(500)
+
+                val controller = player.controller ?: return@launch
+
+
+                // Устанавливаем слушателя на кнопки
+                controller.addListener(object : androidx.media3.common.Player.Listener {
+                    override fun onEvents(player: androidx.media3.common.Player, events: androidx.media3.common.Player.Events) {
+                        if (events.contains(androidx.media3.common.Player.EVENT_POSITION_DISCONTINUITY)) {
+                            // Можно добавить логику автоперехода
+                        }
+                    }
+                })
+            }
+        }
+        // ✅ Синхронизируем состояние при старте
+        syncFromService()
     }
 
-    // ✅ Запуск MediaSession сервиса
+    // ✅ Восстанавливает currentTrack из сервиса при возврате в приложение
+    // ✅ Восстанавливает состояние из MediaSession
+    fun syncFromService() {
+        val controller = player.controller ?: return  // ✅ Исправлено
+
+        viewModelScope.launch {
+            val item = controller.currentMediaItem
+            if (item != null) {
+                val metadata = item.mediaMetadata  // ✅ Исправлено
+                val title = metadata.title?.toString() ?: return@launch
+
+                _uiState.value = _uiState.value.copy(
+                    currentTrack = TrackInfo(
+                        title = title,
+                        url = item.localConfiguration?.uri?.toString() ?: "",  // ✅ Исправлено
+                        coverUrl = metadata.artworkUri?.toString(),
+                        isOffline = false
+                    )
+                )
+            }
+        }
+    }
 
 
-    // ✅ Обновление метаданных трека для уведомления
+    fun startMediaService(context: Context) {
+        if (!isServiceStarted) {
+            val intent = android.content.Intent(context, MusicService::class.java)
+            ContextCompat.startForegroundService(context, intent)
+            isServiceStarted = true
+        }
+    }
+    private var selectedParser: MusicParser = PesniParser()
+
+
+    fun setParser(parserName: String) {
+        selectedParser = when (parserName) {
+            "Zvukofon.com" -> ZvukofonParser()
+            else -> PesniParser()
+        }
+        println("🔄 Parser changed to: ${selectedParser.name}")
+    }
+
+    fun getAvailableParsers(): List<String> {
+        return listOf("Pesni.me", "Zvukofon.com")
+    }
+
     fun updateMediaMetadata(title: String, artist: String = "Dystopia Music", coverUrl: String? = null) {
         // MediaSession автоматически обновит уведомление при изменении трека
         // ExoPlayer сам обрабатывает это через MediaMetadata
     }
     private fun setupPlayerListener() {
-        player.player.addListener(object : androidx.media3.common.Player.Listener {
-            override fun onPlaybackStateChanged(state: Int) {
-                if (state == androidx.media3.common.Player.STATE_ENDED) {
-                    handleTrackEnded()
-                }
-            }
-        })
+        // Ждём подключения к сервису
+        viewModelScope.launch {
+            // Обработчик конца трека теперь в MusicService или через Flow
+            // Для простоты можно убрать отсюда и полагаться на UI
+        }
     }
 
     // === НАВИГАЦИЯ И АВТОПЛЕЙ ===
@@ -156,8 +222,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         val tracks = state.playlistTracks
         if (tracks.isEmpty() || state.currentPlaylistIndex < 0) return
 
-        if (player.player.currentPosition > 3000) {
-            player.player.seekTo(0)
+        if (player.currentPosition > 3000) {
+            player.seekTo(0)
             return
         }
 
@@ -200,7 +266,12 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                     currentPlaylistIndex = -1,
                     selectedPlaylist = null
                 )
-                player.play(track.url)
+                player.play(
+                    url = track.url,
+                    title = track.title,
+                    artist = "Dystopia Music",
+
+                )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
             }
@@ -214,14 +285,17 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, searchResults = emptyList(), error = null)
             try {
-                val results = parser.searchTracks(q)
+                val results = selectedParser.searchTracks(q)  // ✅ Используем selectedParser
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     searchResults = results,
-                    error = if (results.isEmpty()) "Ничего не найдено" else null
+                    error = if (results.isEmpty()) "Ничего не найдено в ${selectedParser.name}" else null
                 )
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Ошибка ${selectedParser.name}: ${e.message}"
+                )
             }
         }
     }
@@ -230,21 +304,37 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isFetchingDetails = true, error = null)
             try {
-                val trackInfo = parser.getTrackDetails(result.pageUrl)
+                val trackInfo = selectedParser.getTrackDetails(result.pageUrl)
+
                 var finalTrack = trackInfo
 
                 if (context != null) {
                     val localPath = OfflineManager.getOfflinePath(context, trackInfo.title)
                     if (localPath != null && File(localPath).exists()) {
                         finalTrack = trackInfo.copy(url = localPath, isOffline = true)
-                        println("🎵 Playing OFFLINE: $localPath")
-                    } else {
-                        println("🌐 Playing ONLINE: ${trackInfo.url}")
                     }
                 }
 
-                _uiState.value = _uiState.value.copy(isFetchingDetails = false, currentTrack = finalTrack)
-                player.play(finalTrack.url)
+                // ✅ Запускаем сервис
+                if (context != null) startMediaService(context)
+
+                // ✅ Получаем обложку
+                val cover = finalTrack.coverUrl ?: getCoverUrl(finalTrack.title)
+                val finalTrackWithCover = finalTrack.copy(coverUrl = cover)
+
+                _uiState.value = _uiState.value.copy(
+                    isFetchingDetails = false,
+                    currentTrack = finalTrackWithCover
+                )
+
+                // ✅ Передаем ВСЕ параметры в play()
+                player.play(
+                    url = finalTrackWithCover.url,
+                    title = finalTrackWithCover.title,
+                    artist = "Dystopia Music",
+                    coverUrl = cover
+
+                )
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isFetchingDetails = false,
@@ -386,13 +476,33 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             if (localPath != null && File(localPath).exists()) {
                 finalUrl = localPath
                 isOffline = true
-                println("✅ Playing OFFLINE: $localPath")
-            } else {
-                println("❌ Playing ONLINE: ${track.trackUrl}")
             }
 
-            // ✅ ЗАГРУЖАЕМ ОБЛОЖКУ
             val coverUrl = getCoverUrl(track.title)
+
+            // ✅ Создаём список всех треков для MediaSession
+            val mediaItems: List<MediaItem> = tracks.map { t ->
+                val itemUrl = if (OfflineManager.isOffline(context, t.title)) {
+                    OfflineManager.getOfflinePath(context, t.title) ?: t.trackUrl
+                } else {
+                    t.trackUrl
+                }
+
+                val trackCover = getCoverUrl(t.title)
+
+                MediaItem.Builder()
+                    .setUri(itemUrl)
+                    .setMediaMetadata(
+                        MediaMetadata.Builder()
+                            .setTitle(t.title)
+                            .setArtworkUri(if (trackCover != null) Uri.parse(trackCover) else null)
+                            .setArtist("Dystopia Music")
+                            .build()
+                    )
+                    .build()
+            }
+
+            startMediaService(context)
 
             val trackInfo = TrackInfo(
                 title = track.title,
@@ -408,7 +518,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 currentPlaylistIndex = index,
                 playedIndices = mutableSetOf()
             )
-            player.play(finalUrl)
+
+            // ✅ Передаём весь плейлист
+            player.play(
+                url = finalUrl,
+                title = track.title,
+                artist = "Dystopia Music",
+                coverUrl = coverUrl,
+                playlist = mediaItems
+
+            )
         }
     }
 
@@ -420,11 +539,10 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 val localPath = OfflineManager.getOfflinePath(context, track.title)
                 if (localPath != null && File(localPath).exists()) {
                     finalTrack = track.copy(url = localPath, isOffline = true)
-                    println("🎵 Playing OFFLINE: $localPath")
-                } else {
-                    println("🌐 Playing ONLINE: ${track.url}")
                 }
             }
+
+            if (context != null) startMediaService(context)
 
             if (finalTrack.coverUrl == null) {
                 val cover = getCoverUrl(finalTrack.title)
@@ -432,7 +550,15 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             _uiState.value = _uiState.value.copy(currentTrack = finalTrack, error = null)
-            player.play(finalTrack.url)
+
+            // ✅ Передаем метаданные для уведомления
+            player.play(
+                url = finalTrack.url,
+                title = finalTrack.title,
+                artist = "Dystopia Music",
+                coverUrl = finalTrack.coverUrl
+
+            )
         }
     }
 
