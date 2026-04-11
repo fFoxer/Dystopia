@@ -1,9 +1,9 @@
 package com.example.dystopia.ui
 
-import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -13,75 +13,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.dystopia.MusicViewModel
 import com.example.dystopia.RepeatMode
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.ui.text.style.TextAlign
+import com.example.dystopia.data.Playlist
 import androidx.media3.common.C
-import kotlinx.coroutines.delay
-
-@Composable
-fun MiniPlayer(viewModel: MusicViewModel, onClick: () -> Unit) {
-    val isPlaying by viewModel.player.isPlaying.collectAsState()
-    val state by viewModel.uiState.collectAsState()
-    val currentTrack = state.currentTrack
-
-    var progress by remember { mutableFloatStateOf(0f) }
-
-    LaunchedEffect(isPlaying, currentTrack) {
-        while (isPlaying && currentTrack != null) {
-            val currentPosition = viewModel.player.player.currentPosition
-            val totalDuration = viewModel.player.player.duration
-
-            if (totalDuration > 0 && totalDuration != C.TIME_UNSET) {
-                progress = currentPosition.toFloat() / totalDuration.toFloat()
-            }
-            delay(1000)
-        }
-    }
-
-    LaunchedEffect(currentTrack) {
-        progress = 0f
-    }
-
-    if (currentTrack == null) return
-
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(modifier = Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(if (currentTrack.coverUrl != null) Color.Transparent else MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
-                    if (!currentTrack.coverUrl.isNullOrBlank()) {
-                        AsyncImage(model = currentTrack.coverUrl, contentDescription = "Cover", modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
-                    } else {
-                        Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
-                    }
-                }
-                Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                    Text(text = currentTrack.title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(text = if (isPlaying) "Воспроизведение..." else "На паузе", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                IconButton(onClick = { viewModel.togglePlay() }) {
-                    Icon(imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = if (isPlaying) "Pause" else "Play", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(32.dp))
-                }
-            }
-            LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(4.dp), color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surfaceVariant)
-        }
-    }
-}
+import android.widget.Toast
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,6 +30,10 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
     val isPlaying by viewModel.player.isPlaying.collectAsState()
     val state by viewModel.uiState.collectAsState()
     val currentTrack = state.currentTrack
+
+    // ✅ Берем обложку из MediaMetadata
+    val coverUri by viewModel.player.currentCover.collectAsState()
+
     val context = LocalContext.current
 
     if (currentTrack == null) { onBack(); return }
@@ -99,9 +44,8 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
 
     LaunchedEffect(isPlaying, currentTrack) {
         while (true) {
-            val player = viewModel.player.player
-            val currentPosition = player.currentPosition
-            val totalDuration = player.duration
+            val currentPosition = viewModel.player.currentPosition
+            val totalDuration = viewModel.player.duration
 
             if (totalDuration > 0 && totalDuration != C.TIME_UNSET) {
                 duration = totalDuration
@@ -109,7 +53,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                     sliderPosition = currentPosition.toFloat() / totalDuration.toFloat()
                 }
             }
-            delay(1000)
+            kotlinx.coroutines.delay(1000)
         }
     }
 
@@ -134,7 +78,6 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
             )
         }
     ) { padding ->
-        // ✅ Адаптивная прокрутка
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -143,7 +86,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // 📀 Обложка
+            // 📀 Обложка (из MediaMetadata)
             item {
                 Spacer(Modifier.height(16.dp))
                 Box(
@@ -151,23 +94,23 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                         .size(280.dp)
                         .clip(RoundedCornerShape(16.dp))
                         .background(
-                            if (currentTrack.coverUrl != null)
+                            if (!coverUri.isNullOrBlank())
                                 MaterialTheme.colorScheme.surface
                             else
                                 MaterialTheme.colorScheme.primaryContainer
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (!currentTrack.coverUrl.isNullOrBlank()) {
+                    if (!coverUri.isNullOrBlank()) {
                         AsyncImage(
-                            model = currentTrack.coverUrl,
+                            model = coverUri,
                             contentDescription = "Cover",
                             modifier = Modifier
                                 .fillMaxSize()
                                 .clip(RoundedCornerShape(16.dp)),
-                            contentScale = ContentScale.Crop,
-                            placeholder = painterResource(android.R.drawable.ic_menu_gallery),
-                            error = painterResource(android.R.drawable.ic_menu_gallery)
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            placeholder = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery),
+                            error = androidx.compose.ui.res.painterResource(android.R.drawable.ic_menu_gallery)
                         )
                     } else {
                         Icon(
@@ -231,7 +174,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                         },
                         onValueChangeFinished = {
                             isDragging = false
-                            viewModel.player.player.seekTo((sliderPosition * duration).toLong())
+                            viewModel.player.seekTo((sliderPosition * duration).toLong())
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = SliderDefaults.colors(
@@ -294,7 +237,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (isPlaying) "Pause" else "Play",
-                            tint = Color.White,
+                            tint = androidx.compose.ui.graphics.Color.White,
                             modifier = Modifier.size(40.dp)
                         )
                     }
@@ -330,7 +273,7 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
                 }
             }
 
-            // 📥 Кнопки действий (Скачать и Плейлист)
+            // 📥 Кнопки действий
             item {
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(24.dp),
@@ -443,23 +386,45 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
     }
 }
 
-private fun formatTime(timeMs: Long): String {
-    if (timeMs < 0 || timeMs == C.TIME_UNSET) return "0:00"
-    val totalSeconds = timeMs / 1000
+fun formatTime(ms: Long): String {
+    if (ms < 0) return "0:00"
+    val totalSeconds = ms / 1000
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
-    return "$minutes:${seconds.toString().padStart(2, '0')}"
+    return "$minutes:${if (seconds < 10) "0$seconds" else seconds}"
 }
 
 @Composable
-fun AddToPlaylistDialog(viewModel: MusicViewModel, track: com.example.dystopia.data.TrackInfo, onDismiss: () -> Unit) {
+fun AddToPlaylistDialog(
+    viewModel: MusicViewModel,
+    track: com.example.dystopia.data.TrackInfo,
+    onDismiss: () -> Unit
+) {
     val state by viewModel.uiState.collectAsState()
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Сохранить в плейлист") }, text = {
-        Column {
-            if (state.playlists.isEmpty()) Text("Нет созданных плейлистов", style = MaterialTheme.typography.bodyMedium)
-            else state.playlists.forEach { playlist ->
-                TextButton(onClick = { viewModel.saveTrackToPlaylist(playlist.id, track); onDismiss() }, modifier = Modifier.fillMaxWidth()) { Text(playlist.name) }
+    val playlists = state.playlists
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Добавить в плейлист") },
+        text = {
+            LazyColumn {
+                items(playlists) { playlist ->
+                    TextButton(
+                        onClick = {
+                            viewModel.saveTrackToPlaylist(playlist.id, track)
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(playlist.name)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Отмена")
             }
         }
-    }, confirmButton = { TextButton(onClick = onDismiss) { Text("Отмена") } })
+    )
 }

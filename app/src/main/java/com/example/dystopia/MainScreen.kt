@@ -1,14 +1,20 @@
 package com.example.dystopia
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalLayoutDirection  // ✅ Добавь это
+import coil.compose.AsyncImage
 import com.example.dystopia.ui.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -16,15 +22,17 @@ import com.example.dystopia.ui.*
 fun MainScreen(viewModel: MusicViewModel) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val state by viewModel.uiState.collectAsState()
+    val isPlaying by viewModel.player.isPlaying.collectAsState()
     var showFullPlayer by remember { mutableStateOf(false) }
-    val layoutDirection = LocalLayoutDirection.current  // ✅ Получаем направление
 
     Scaffold(
         bottomBar = {
             Column {
-                state.currentTrack?.let {
+                // ✅ Показываем мини-плеер если есть трек
+                if (state.currentTrack != null) {
                     MiniPlayer(
                         viewModel = viewModel,
+                        isPlaying = isPlaying,
                         onClick = { showFullPlayer = true }
                     )
                     HorizontalDivider()
@@ -46,14 +54,8 @@ fun MainScreen(viewModel: MusicViewModel) {
                 }
             }
         }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier.padding(
-                start = innerPadding.calculateLeftPadding(layoutDirection),  // ✅ Теперь работает
-                end = innerPadding.calculateRightPadding(layoutDirection),    // ✅ Теперь работает
-                bottom = innerPadding.calculateBottomPadding()
-            )
-        ) {
+    ) { padding ->
+        Box(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
                 0 -> HomeScreen(viewModel)
                 1 -> PlaylistsScreen(viewModel)
@@ -66,5 +68,88 @@ fun MainScreen(viewModel: MusicViewModel) {
             viewModel = viewModel,
             onBack = { showFullPlayer = false }
         )
+    }
+}
+
+// 🎵 MiniPlayer с обложкой из MediaMetadata
+@Composable
+fun MiniPlayer(
+    viewModel: MusicViewModel,
+    isPlaying: Boolean,
+    onClick: () -> Unit
+) {
+    val state by viewModel.uiState.collectAsState()
+    val currentTrack = state.currentTrack ?: return
+
+    // ✅ Берем обложку из MediaSession/ExoPlayer
+    val coverUri by viewModel.player.currentCover.collectAsState()
+
+    Card(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(64.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 📀 Обложка
+            if (!coverUri.isNullOrBlank()) {
+                AsyncImage(
+                    model = coverUri,
+                    contentDescription = "Cover",
+                    modifier = Modifier.size(40.dp),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                )
+            } else {
+                androidx.compose.material3.Icon(
+                    Icons.Default.LibraryMusic,
+                    "Cover",
+                    modifier = Modifier.size(40.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // 🎵 Информация о треке
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
+            ) {
+                Text(
+                    text = currentTrack.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Dystopia Music",
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // ▶️ Кнопка Play/Pause
+            IconButton(
+                onClick = { viewModel.togglePlay() },
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
     }
 }

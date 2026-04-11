@@ -69,5 +69,6 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.5.0")
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("org.jsoup:jsoup:1.17.2")
-    // Media3 для уведомлений и MediaSession
+    implementation("androidx.media3:media3-session:1.2.0")
+
 }
