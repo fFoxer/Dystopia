@@ -23,10 +23,11 @@ import com.example.dystopia.RepeatMode
 import com.example.dystopia.data.Playlist
 import androidx.media3.common.C
 import android.widget.Toast
+import androidx.compose.foundation.clickable
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
+fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit, onArtistClick: (String) -> Unit = {}) {
     val isPlaying by viewModel.player.isPlaying.collectAsState()
     val state by viewModel.uiState.collectAsState()
     val currentTrack = state.currentTrack
@@ -124,22 +125,27 @@ fun FullPlayerScreen(viewModel: MusicViewModel, onBack: () -> Unit) {
             }
 
             item {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                val currentArtist = currentTrack.artist
+                    ?: if (currentTrack.title.contains(" - ")) currentTrack.title.substringBefore(" - ")
+                    else "Неизвестный"
+
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = currentTrack.title,
                         style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         textAlign = TextAlign.Center
                     )
+
+                    // ✅ Кликабельное имя исполнителя
                     Text(
-                        text = "Dystopia Music",
+                        text = "🎤 $currentArtist",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable {
+                            onArtistClick(currentArtist)  // ✅ Вызываем колбэк
+                        }
                     )
                 }
             }

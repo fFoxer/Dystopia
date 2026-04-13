@@ -24,6 +24,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import com.example.dystopia.ArtistTab
+import com.example.dystopia.data.SearchItem
 
 
 enum class RepeatMode { NONE, ONE, ALL }
@@ -44,7 +46,11 @@ data class UiState(
     val currentPlaylistIndex: Int = -1,
     val shuffledPlaylistIndices: List<Int> = emptyList(),
     val playedIndices: MutableSet<Int> = mutableSetOf(),
-    val searchResults: List<SearchResult> = emptyList()
+    val searchResults: List<SearchResult> = emptyList(),
+    val isRecommendationMode: Boolean = false,
+    val artistSearchItems: List<SearchItem> = emptyList(),  // ✅ Для поиска артиста
+    val activeArtistTab: ArtistTab = ArtistTab.TRACKS
+// ✅ Текущая вкладка
 )
 
 class MusicViewModel(application: Application) : AndroidViewModel(application) {
@@ -83,6 +89,80 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         syncFromService()
     }
 
+    // ✅ Поиск ВСЕХ треков исполнителя (без лимита)
+    fun searchAllArtistTracks(artistName: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isLoading = true,
+                searchResults = emptyList(),
+                query = "🎤 $artistName (все треки)",
+                isRecommendationMode = false
+            )
+
+            try {
+                // ✅ Передаем 0 как лимит = без ограничений
+                val results = selectedParser.searchTracks(artistName, limit = 0)
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    searchResults = results
+                )
+
+                println("🎵 Found ${results.size} tracks for $artistName")
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Ошибка поиска: ${e.message}"
+                )
+            }
+        }
+    }
+
+    // ✅ Функция для получения имени исполнителя
+    private fun getArtistFromTitle(fullTitle: String): String {
+        // Если есть разделитель " - ", берем первую часть
+        return if (fullTitle.contains(" - ")) {
+            fullTitle.substringBefore(" - ").trim()
+        } else {
+            "Неизвестный исполнитель"
+        }
+    }
+
+    // ✅ Функция просмотра треков исполнителя
+    fun openArtistTracks(artistName: String) {
+        // Переходим на вкладку поиска (индекс 0)
+        // Примечание: чтобы это работало, нам нужно управлять selectedTab из ViewModel
+        // Но пока проще просто запустить поиск и показать результаты
+
+        _uiState.value = _uiState.value.copy(
+            isLoading = true,
+            searchResults = emptyList(),
+            query = "🎤 $artistName", // Показываем, что ищем артиста
+            currentTrack = null // Скрываем мини-плеер, чтобы видеть список
+        )
+
+        viewModelScope.launch {
+            try {
+                // Ищем треки по имени артиста
+                val results = selectedParser.searchTracks(artistName)
+
+                // Опционально: Фильтруем результаты, оставляя только те, где есть имя артиста
+                val filteredResults = results.filter {
+                    it.displayTitle.contains(artistName, ignoreCase = true)
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    searchResults = if (filteredResults.isNotEmpty()) filteredResults else results
+                )
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Не удалось загрузить треки: ${e.message}"
+                )
+            }
+        }
+    }
 
     fun syncFromService() {
         val controller = player.controller ?: return
@@ -283,7 +363,7 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, searchResults = emptyList(), error = null)
             try {
-                val results = selectedParser.searchTracks(q)
+                val results = selectedParser.searchTracks(q, limit = 20)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     searchResults = results,
@@ -676,5 +756,50 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         player.release()
+    }
+    // ✅ Поиск всего контента артиста (треки + плейлисты)
+    fun searchArtistFull(artistName: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isLoading = true,
+                artistSearchItems = emptyList(),
+                activeArtistTab = ArtistTab.TRACKS,
+                query = "🎤 $artistName",
+                isRecommendationMode = false
+            )
+
+            try {
+                val items = selectedParser.searchArtistContent(artistName, limit = 100)
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    artistSearchItems = items
+                )
+
+                println("🎵 Loaded ${items.size} items for $artistName")
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Ошибка поиска: ${e.message}"
+                )
+            }
+        }
+    }
+
+    // ✅ Переключение вкладок
+    fun setArtistTab(tab: ArtistTab) {
+        _uiState.value = _uiState.value.copy(activeArtistTab = tab)
+    }
+
+    // ✅ Получение треков для текущей вкладки (удобно для UI)
+    fun getArtistTracks(): List<SearchResult> {
+        return _uiState.value.artistSearchItems
+            .filterIsInstance<SearchItem.TrackResult>()
+            .map { it.track }
+    }
+
+    fun getArtistPlaylists(): List<SearchItem.PlaylistResult> {
+        return _uiState.value.artistSearchItems
+            .filterIsInstance<SearchItem.PlaylistResult>()
     }
 }

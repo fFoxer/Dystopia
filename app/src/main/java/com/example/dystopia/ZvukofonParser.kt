@@ -1,5 +1,6 @@
 package com.example.dystopia
 
+import com.example.dystopia.data.SearchItem
 import com.example.dystopia.data.SearchResult
 import com.example.dystopia.data.TrackInfo
 import kotlinx.coroutines.Dispatchers
@@ -23,15 +24,13 @@ class ZvukofonParser : MusicParser {
 
     private val baseUrl = "https://new.zvukofon.com"
 
-    // 🔍 Поиск треков (ПРАВИЛЬНЫЙ URL)
-    override suspend fun searchTracks(query: String): List<SearchResult> = withContext(Dispatchers.IO) {
+    // 🔍 Поиск треков (с параметром limit)
+    override suspend fun searchTracks(query: String, limit: Int): List<SearchResult>   = withContext(Dispatchers.IO) {
         try {
             val encoded = URLEncoder.encode(query, "UTF-8")
-
-            // ✅ ПРАВИЛЬНЫЙ ФОРМАТ: /music/{query}
             val searchUrl = "$baseUrl/music/$encoded"
 
-            println("🔍 Searching Zvukofon: $searchUrl")
+            println("🔍 Searching Zvukofon: $searchUrl (limit: $limit)")
 
             val request = Request.Builder()
                 .url(searchUrl)
@@ -50,7 +49,8 @@ class ZvukofonParser : MusicParser {
                 return@withContext emptyList()
             }
 
-            return@withContext parseSearchResults(response, baseUrl)
+            // ✅ Передаём limit в парсер
+            return@withContext parseSearchResults(response, baseUrl, limit)
 
         } catch (e: Exception) {
             println("❌ Zvukofon search error: ${e.message}")
@@ -59,16 +59,14 @@ class ZvukofonParser : MusicParser {
         }
     }
 
-    // ✅ Функция парсинга результатов
-    private fun parseSearchResults(response: okhttp3.Response, baseUrl: String): List<SearchResult> {
+    // ✅ Функция парсинга результатов (с параметром limit)
+    private fun parseSearchResults(response: okhttp3.Response, baseUrl: String, limit: Int = 20): List<SearchResult> {
         try {
             val html = response.body?.string() ?: return emptyList()
             val doc = Jsoup.parse(html, baseUrl)
             val results = mutableListOf<SearchResult>()
 
-            // ✅ Ищем элементы с data-musmeta
             val items = doc.select("[data-musmeta]")
-
             println("📦 Found ${items.size} items with data-musmeta")
 
             for (item in items) {
@@ -76,7 +74,6 @@ class ZvukofonParser : MusicParser {
                 if (musMeta.isBlank()) continue
 
                 try {
-                    // Декодируем HTML-entities
                     val decodedJson = musMeta
                         .replace("&quot;", "\"")
                         .replace("&amp;", "&")
@@ -91,7 +88,6 @@ class ZvukofonParser : MusicParser {
 
                     if (title.isBlank()) continue
 
-                    // Формируем pageUrl
                     val pageUrl = if (trackUrl.startsWith("http")) {
                         trackUrl
                     } else {
@@ -111,7 +107,11 @@ class ZvukofonParser : MusicParser {
                         )
                     )
 
-                    if (results.size >= 20) break
+                    // ✅ Используем параметр limit (0 = без ограничений)
+                    if (limit > 0 && results.size >= limit) {
+                        println("⏹️ Limit reached: $limit")
+                        break
+                    }
 
                 } catch (e: Exception) {
                     println("⚠️ Failed to parse item: ${e.message}")
@@ -152,6 +152,7 @@ class ZvukofonParser : MusicParser {
             val item = doc.selectFirst("[data-musmeta]")
             var title = "Unknown Track"
             var audioUrl: String? = null
+            var artist: String? = null
 
             if (item != null && item.hasAttr("data-musmeta")) {
                 try {
@@ -161,6 +162,10 @@ class ZvukofonParser : MusicParser {
 
                     val json = JSONObject(musMeta)
                     title = json.optString("title", title)
+
+                    // ✅ Извлекаем artist
+                    artist = json.optString("artist", "").takeIf { it.isNotBlank() }
+
                     val mp3 = json.optString("url", "")
                     if (mp3.isNotBlank()) {
                         audioUrl = if (mp3.startsWith("http")) mp3 else "$baseUrl$mp3"
@@ -170,12 +175,13 @@ class ZvukofonParser : MusicParser {
                 }
             }
 
-            // Fallback
+            // Fallback для title
             if (title == "Unknown Track") {
                 title = doc.selectFirst("h1, .track-title, meta[property='og:title']")
                     ?.text()?.trim() ?: "Unknown Track"
             }
 
+            // Fallback для audioUrl
             if (audioUrl.isNullOrBlank()) {
                 audioUrl = doc.selectFirst("a[href*='.mp3'], button[data-url]")
                     ?.attr("abs:href")
@@ -211,14 +217,17 @@ class ZvukofonParser : MusicParser {
             title = title.cleanTitle()
             val coverUrl = fetchCoverFromITunes(title)
 
-            println("✅ Track: $title -> $audioUrl")
+            println("✅ Track: $title by ${artist ?: "Unknown"} -> $audioUrl")
 
-            TrackInfo(
+            // ✅ Создаём TrackInfo с именованными параметрами
+            return@withContext TrackInfo(
                 title = title,
                 url = audioUrl!!,
                 coverUrl = coverUrl,
-                isOffline = false
+                isOffline = false,
+                artist = artist
             )
+
         } catch (e: Exception) {
             println("❌ Zvukofon details error: ${e.message}")
             throw e
@@ -252,6 +261,70 @@ class ZvukofonParser : MusicParser {
         } catch (e: Exception) {
             println("⚠️ Не удалось получить обложку: $trackName")
             null
+        }
+    }
+    // ✅ Поиск всего контента артиста (треки + плейлисты)
+    override suspend fun searchArtistContent(artistName: String, limit: Int): List<SearchItem> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<SearchItem>()
+
+        try {
+            // 1. Ищем треки (используем базовый поиск)
+            val tracks = searchTracks(artistName, limit = limit / 2)
+            results.addAll(tracks.map { SearchItem.TrackResult(it) })
+
+            // 2. Ищем плейлисты артиста (специальный запрос)
+            val encoded = URLEncoder.encode(artistName, "UTF-8")
+            val playlistUrl = "$baseUrl/playlists?q=$encoded"
+
+            val request = Request.Builder()
+                .url(playlistUrl)
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .addHeader("Accept-Language", "ru-RU,ru;q=0.9")
+                .addHeader("Referer", baseUrl)
+                .build()
+
+            val response = client.newCall(request).execute()
+
+            if (response.isSuccessful) {
+                val doc = Jsoup.parse(response.body?.string() ?: "", playlistUrl)
+
+                // Ищем карточки плейлистов (селекторы могут отличаться)
+                val playlistCards = doc.select("a[href*='/playlist/'], .playlist-card, [data-playlist]")
+
+                for (card in playlistCards.take(limit / 2)) {
+                    val name = card.selectFirst(".playlist-title, .title, h3")?.text()?.trim() ?: continue
+                    val href = card.attr("abs:href").ifBlank { card.attr("href") }
+                    val trackCount = card.selectFirst(".track-count, .meta")?.text()?.trim() ?: ""
+                    val cover = card.selectFirst("img")?.attr("abs:src")
+
+                    if (href.isNotBlank() && name.isNotBlank()) {
+                        results.add(
+                            SearchItem.PlaylistResult(
+                                name = name,
+                                pageUrl = href,
+                                trackCount = trackCount,
+                                coverUrl = cover
+                            )
+                        )
+                    }
+
+                    if (results.size >= limit) break
+                }
+            }
+
+            println("🎵 Artist search: ${results.size} items found for $artistName")
+            return@withContext results.distinctBy {
+                when (it) {
+                    is SearchItem.TrackResult -> it.track.cleanTitle
+                    is SearchItem.PlaylistResult -> it.pageUrl
+                }
+            }
+
+        } catch (e: Exception) {
+            println("⚠️ Artist search error: ${e.message}")
+            // Fallback: возвращаем только треки если плейлисты не нашли
+            return@withContext searchTracks(artistName, limit).map { SearchItem.TrackResult(it) }
         }
     }
 }

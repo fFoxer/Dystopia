@@ -26,6 +26,10 @@ import coil.compose.AsyncImage
 import com.example.dystopia.MusicViewModel
 import com.example.dystopia.data.OfflineManager
 import com.example.dystopia.data.Playlist
+import com.example.dystopia.data.SearchItem
+import com.example.dystopia.data.SearchResult
+import com.example.dystopia.ArtistTab
+
 
 @Composable
 fun PlaylistsScreen(viewModel: MusicViewModel) {

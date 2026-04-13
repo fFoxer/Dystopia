@@ -1,8 +1,6 @@
 package com.example.dystopia
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -12,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -25,10 +24,16 @@ fun MainScreen(viewModel: MusicViewModel) {
     val isPlaying by viewModel.player.isPlaying.collectAsState()
     var showFullPlayer by remember { mutableStateOf(false) }
 
+    // ✅ Состояние для экрана поиска артиста
+    var showArtistSearch by remember { mutableStateOf(false) }
+    var currentArtistName by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
     LaunchedEffect(Unit) {
         viewModel.resetNavigation.collect {
             selectedTab = 0
             showFullPlayer = false
+            showArtistSearch = false
         }
     }
 
@@ -69,15 +74,39 @@ fun MainScreen(viewModel: MusicViewModel) {
         }
     }
 
+    // ✅ Полный плеер
     if (showFullPlayer) {
         FullPlayerScreen(
             viewModel = viewModel,
-            onBack = { showFullPlayer = false }
+            onBack = { showFullPlayer = false },
+            onArtistClick = { artistName ->
+                currentArtistName = artistName
+                viewModel.searchArtistFull(artistName)
+                showArtistSearch = true
+            }
+        )
+    }
+
+    // ✅ Экран поиска артиста (импортируется из ui/)
+    if (showArtistSearch) {
+        ArtistSearchScreen(
+            viewModel = viewModel,
+            artistName = currentArtistName,
+            onBack = { showArtistSearch = false },
+            onTrackClick = { result ->
+                viewModel.playSearchResult(result, context)
+                showArtistSearch = false
+                showFullPlayer = true
+            },
+            onPlaylistClick = { playlistResult ->
+                println("📁 Opening playlist: ${playlistResult.name}")
+                // TODO: Реализовать загрузку внешнего плейлиста
+            }
         )
     }
 }
 
-// 🎵 MiniPlayer с обложкой из MediaMetadata
+// 🎵 MiniPlayer (оставляем только этот компонент здесь)
 @Composable
 fun MiniPlayer(
     viewModel: MusicViewModel,
@@ -86,26 +115,24 @@ fun MiniPlayer(
 ) {
     val state by viewModel.uiState.collectAsState()
     val currentTrack = state.currentTrack ?: return
-
-    // ✅ Берем обложку из MediaSession/ExoPlayer
     val coverUri by viewModel.player.currentCover.collectAsState()
+
+    val artistName = currentTrack.artist
+        ?: if (currentTrack.title.contains(" - ")) {
+            currentTrack.title.substringBefore(" - ").trim()
+        } else {
+            "Неизвестный исполнитель"
+        }
 
     Card(
         onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(64.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+        modifier = Modifier.fillMaxWidth().height(64.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 12.dp),
+            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 📀 Обложка
             if (!coverUri.isNullOrBlank()) {
                 AsyncImage(
                     model = coverUri,
@@ -122,12 +149,7 @@ fun MiniPlayer(
                 )
             }
 
-            // 🎵 Информация о треке
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 12.dp)
-            ) {
+            Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(
                     text = currentTrack.title,
                     style = MaterialTheme.typography.bodyMedium,
@@ -136,7 +158,7 @@ fun MiniPlayer(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Dystopia Music",
+                    text = artistName,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
