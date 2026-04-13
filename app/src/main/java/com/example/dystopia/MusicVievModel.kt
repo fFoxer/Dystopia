@@ -381,39 +381,81 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun playSearchResult(result: SearchResult, context: Context? = null) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isFetchingDetails = true, error = null)
-            try {
-                val trackInfo = selectedParser.getTrackDetails(result.pageUrl)
 
-                var finalTrack = trackInfo
+            try {
+                println("🎵 Playing search result: ${result.displayTitle}")
+
+                // ✅ 1. Загружаем детали трека (только для URL и возможной обложки)
+                val trackDetails = selectedParser.getTrackDetails(result.pageUrl)
+
+                // ✅ 2. Извлекаем название и артиста ИЗ SearchResult (они уже правильные!)
+                val displayTitle = result.displayTitle
+                val (artistFromTitle, titleFromResult) = if (displayTitle.contains(" - ")) {
+                    val parts = displayTitle.split(" - ", limit = 2)
+                    parts[0].trim() to parts[1].trim()
+                } else {
+                    null to displayTitle
+                }
+
+                println("📝 Parsed: Title='$titleFromResult', Artist='$artistFromTitle'")
+
+                // ✅ 3. Определяем финальный URL (офлайн или онлайн)
+                var finalUrl = trackDetails.url
+                var isOffline = false
 
                 if (context != null) {
-                    val localPath = OfflineManager.getOfflinePath(context, trackInfo.title)
+                    val localPath = OfflineManager.getOfflinePath(context, titleFromResult)
                     if (localPath != null && File(localPath).exists()) {
-                        finalTrack = trackInfo.copy(url = localPath, isOffline = true)
+                        finalUrl = localPath
+                        isOffline = true
+                        println("💾 Using offline track: $localPath")
                     }
                 }
 
+                // ✅ 4. Получаем обложку с приоритетами:
+                //    1. Из trackDetails (если парсер нашёл)
+                //    2. Из iTunes API (по displayTitle для точности)
+                //    3. null (если ничего не найдено)
+                val coverUrl = trackDetails.coverUrl
+                    ?.takeIf { it.isNotBlank() }
+                    ?: getCoverUrl(displayTitle)
 
-                if (context != null) startMediaService(context)
+                println("🖼️ Cover: ${coverUrl ?: "not found"}")
 
+                // ✅ 5. Создаём финальный TrackInfo
+                val finalTrack = TrackInfo(
+                    title = titleFromResult,      // ✅ Чистое название
+                    url = finalUrl,                // ✅ Правильный URL
+                    artist = artistFromTitle,      // ✅ Исполнитель
+                    coverUrl = coverUrl,           // ✅ Обложка
+                    isOffline = isOffline          // ✅ Флаг офлайн
+                )
 
-                val cover = finalTrack.coverUrl ?: getCoverUrl(finalTrack.title)
-                val finalTrackWithCover = finalTrack.copy(coverUrl = cover)
+                // ✅ 6. Запускаем сервис если нужно
+                if (context != null) {
+                    startMediaService(context)
+                }
 
+                // ✅ 7. Обновляем UI состояние
                 _uiState.value = _uiState.value.copy(
                     isFetchingDetails = false,
-                    currentTrack = finalTrackWithCover
+                    currentTrack = finalTrack
                 )
 
-
+                // ✅ 8. Запускаем воспроизведение с ПРАВИЛЬНЫМИ метаданными
                 player.play(
-                    url = finalTrackWithCover.url,
-                    title = finalTrackWithCover.title,
-                    artist = "Dystopia Music",
-                    coverUrl = cover
-
+                    url = finalTrack.url,
+                    title = finalTrack.title,           // ✅ Правильное название
+                    artist = finalTrack.artist ?: "Dystopia Music",  // ✅ Правильный артист
+                    coverUrl = finalTrack.coverUrl      // ✅ Правильная обложка
                 )
+
+                println("✅ Now playing: '${finalTrack.title}' by ${finalTrack.artist ?: "Unknown"}")
+
             } catch (e: Exception) {
+                println("❌ Error in playSearchResult: ${e.message}")
+                e.printStackTrace()
+
                 _uiState.value = _uiState.value.copy(
                     isFetchingDetails = false,
                     error = "Ошибка загрузки: ${e.message}"
@@ -801,5 +843,176 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     fun getArtistPlaylists(): List<SearchItem.PlaylistResult> {
         return _uiState.value.artistSearchItems
             .filterIsInstance<SearchItem.PlaylistResult>()
+    }
+
+    // ✅ Загрузка треков альбома
+    fun loadAlbumTracks(albumUrl: String, albumName: String) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isLoading = true,
+                searchResults = emptyList(),
+                query = "💿 $albumName"
+            )
+
+            try {
+                val tracks = (selectedParser as? ZvukofonParser)?.getAlbumTracks(albumUrl) ?: emptyList()
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    searchResults = tracks
+                )
+
+                println("✅ Loaded ${tracks.size} tracks from album: $albumName")
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Ошибка загрузки альбома: ${e.message}"
+                )
+            }
+        }
+    }
+
+    // ✅ Выход из режима просмотра альбома
+    fun exitAlbumView() {
+        _uiState.value = _uiState.value.copy(
+            searchResults = emptyList(),
+            query = "",
+            isLoading = false
+        )
+    }
+
+    // ✅ Добавить все треки альбома в плейлист
+    // ✅ Добавить все треки альбома в плейлист
+    // ✅ Добавить все треки альбома в плейлист (с отладкой)
+    fun addAllTracksToPlaylist(tracks: List<SearchResult>, playlistName: String = "Мой плейлист") {
+        viewModelScope.launch {
+            println("📥 [ADD ALL] Starting... Total tracks: ${tracks.size}")
+            _uiState.value = _uiState.value.copy(isLoading = true)
+
+            try {
+                // ✅ 1. Проверяем или создаём плейлист
+                var currentPlaylist = _uiState.value.selectedPlaylist
+
+                if (currentPlaylist == null) {
+                    println("📁 [ADD ALL] Creating new playlist: $playlistName")
+                    currentPlaylist = Playlist(
+                        id = 0,
+                        name = playlistName,
+                        description = "Автоматически создан",
+                        coverUrl = null
+                    )
+
+                    dao.insertPlaylist(currentPlaylist)
+
+                    delay(100)
+                    val playlists = dao.getAllPlaylists()
+                    currentPlaylist = playlists.find { it.name == playlistName }
+                        ?: playlists.maxByOrNull { it.id }
+
+                    println("📁 [ADD ALL] Playlist created with ID: ${currentPlaylist?.id}")
+
+                    if (currentPlaylist == null) {
+                        throw Exception("Не удалось создать плейлист")
+                    }
+
+                    loadPlaylists()
+                } else {
+                    println("📁 [ADD ALL] Using existing playlist: ${currentPlaylist.name} (ID: ${currentPlaylist.id})")
+                }
+
+                var addedCount = 0
+                var skippedCount = 0
+                var failedCount = 0
+
+                // ✅ 2. Добавляем треки с получением MP3 URL
+                for ((index, track) in tracks.withIndex()) {
+                    println("🎵 [ADD ALL] Processing track $index: ${track.displayTitle}")
+
+                    try {
+                        // ✅ Получаем детали трека чтобы взять прямой MP3 URL
+                        val trackDetails = selectedParser.getTrackDetails(track.pageUrl)
+                        val mp3Url = trackDetails.url
+
+                        println("🔗 [ADD ALL] MP3 URL: $mp3Url")
+
+                        // Проверяем что это действительно MP3 ссылка
+                        if (!mp3Url.contains(".mp3", ignoreCase = true)) {
+                            println("⚠️ [ADD ALL] Not an MP3 URL, skipping: $mp3Url")
+                            failedCount++
+                            continue
+                        }
+
+                        val newTrack = PlaylistTrack(
+                            playlistId = currentPlaylist.id,
+                            trackUrl = mp3Url,  // ✅ Сохраняем ПРЯМОЙ MP3 URL
+                            title = track.displayTitle
+                        )
+
+                        // Проверяем на дубликаты
+                        val exists = _uiState.value.playlistTracks.any {
+                            it.title == newTrack.title || it.trackUrl == newTrack.trackUrl
+                        }
+
+                        if (exists) {
+                            println("⏭️ [ADD ALL] Skipping (already exists): ${track.displayTitle}")
+                            skippedCount++
+                            continue
+                        }
+
+                        // Добавляем в БД
+                        dao.addTrackToPlaylist(newTrack)
+                        println("✅ [ADD ALL] Added: ${track.displayTitle}")
+                        addedCount++
+
+                        // Небольшая задержка чтобы не блокировать
+                        delay(50)
+
+                    } catch (e: Exception) {
+                        println("❌ [ADD ALL] Failed to add track: ${track.displayTitle} - ${e.message}")
+                        failedCount++
+                    }
+                }
+
+                // ✅ 3. Обновляем отображение
+                println("🔄 [ADD ALL] Refreshing playlist view...")
+
+                if (_uiState.value.selectedPlaylist?.id == currentPlaylist.id) {
+                    openPlaylist(currentPlaylist)
+                }
+
+                val message = "✅ Добавлено $addedCount треков${if (skippedCount > 0) " (пропущено $skippedCount)" else ""}${if (failedCount > 0) " (ошибок $failedCount)" else ""}"
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    downloadMessage = message
+                )
+
+                println("🎉 [ADD ALL] Complete! Added: $addedCount, Skipped: $skippedCount, Failed: $failedCount")
+
+                val context = getApplication<Application>().applicationContext
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                }
+
+            } catch (e: Exception) {
+                println("❌ [ADD ALL] Error: ${e.message}")
+                e.printStackTrace()
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Ошибка: ${e.message}"
+                )
+
+                val context = getApplication<Application>().applicationContext
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "❌ Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    // ✅ Сброс сообщения
+    fun clearMessage() {
+        _uiState.value = _uiState.value.copy(downloadMessage = null)
     }
 }

@@ -57,29 +57,21 @@ class MusicPlayer(context: Context) {
         })
     }
 
-    fun play(
-        url: String,
-        title: String,
-        artist: String = "Dystopia Music",
-        coverUrl: String? = null,
-        playlist: List<MediaItem>? = null
-    ) {
+    fun play(url: String, title: String, artist: String = "Dystopia Music", coverUrl: String? = null, playlist: List<MediaItem>? = null) {
         val controller = controller ?: return
 
-
-        val metadataBuilder = MediaMetadata.Builder()
+        val metadata = MediaMetadata.Builder()
             .setTitle(title)
             .setArtist(artist)
 
+        // ✅ Обновляем обложку в MediaMetadata
         if (coverUrl != null) {
-            metadataBuilder.setArtworkUri(Uri.parse(coverUrl))
+            metadata.setArtworkUri(android.net.Uri.parse(coverUrl))
         }
-
-        val metadata = metadataBuilder.build()
 
         val mediaItem = MediaItem.Builder()
             .setUri(url)
-            .setMediaMetadata(metadata)
+            .setMediaMetadata(metadata.build())
             .build()
 
         if (playlist != null && playlist.isNotEmpty()) {
@@ -93,9 +85,12 @@ class MusicPlayer(context: Context) {
         controller.prepare()
         controller.play()
 
-
+        // ✅ ВАЖНО: Обновляем currentCover
         if (coverUrl != null) {
             _currentCover.value = coverUrl
+            println("🖼️ Updated cover: $coverUrl")
+        } else {
+            println("⚠️ No cover URL provided for: $title")
         }
     }
 

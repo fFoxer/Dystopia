@@ -1,5 +1,6 @@
 package com.example.dystopia.ui
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -16,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -31,11 +33,19 @@ fun ArtistSearchScreen(
     artistName: String,
     onBack: () -> Unit,
     onTrackClick: (SearchResult) -> Unit,
-    onPlaylistClick: (SearchItem.PlaylistResult) -> Unit
+    onAlbumClick: (SearchItem.PlaylistResult) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
-    val tracks = viewModel.getArtistTracks()
-    val playlists = viewModel.getArtistPlaylists()
+
+    // ✅ Берём данные ПРЯМО из текущего снапшота состояния
+    val tracks = state.artistSearchItems.filterIsInstance<SearchItem.TrackResult>().map { it.track }
+    val playlists = state.artistSearchItems.filterIsInstance<SearchItem.PlaylistResult>()
+
+    // 🐞 Отладка: выводим в Logcat что реально пришло
+    LaunchedEffect(state.artistSearchItems) {
+        Log.d("ArtistScreen", "📦 Total items: ${state.artistSearchItems.size}")
+        Log.d("ArtistScreen", "🎵 Tracks: ${tracks.size}, 📁 Playlists: ${playlists.size}")
+    }
 
     Scaffold(
         topBar = {
@@ -50,6 +60,7 @@ fun ArtistSearchScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
+            // ✅ Вкладки
             TabRow(selectedTabIndex = if (state.activeArtistTab == ArtistTab.TRACKS) 0 else 1) {
                 Tab(
                     selected = state.activeArtistTab == ArtistTab.TRACKS,
@@ -59,23 +70,24 @@ fun ArtistSearchScreen(
                 Tab(
                     selected = state.activeArtistTab == ArtistTab.PLAYLISTS,
                     onClick = { viewModel.setArtistTab(ArtistTab.PLAYLISTS) },
-                    text = { Text("Плейлисты (${playlists.size})") }
+                    text = { Text("Альбомы (${playlists.size})") }
                 )
             }
 
+            // ✅ Контент с исправленной логикой
             when (state.activeArtistTab) {
                 ArtistTab.TRACKS -> {
-                    if (state.isLoading && tracks.isEmpty()) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    if (state.isLoading) {
+                        Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
                         }
                     } else if (tracks.isEmpty()) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("Треки не найдены")
+                        Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                            Text("Треки не найдены 😔")
                         }
                     } else {
                         LazyColumn {
-                            items(tracks) { result ->
+                            items(tracks, key = { it.cleanTitle }) { result ->
                                 SearchResultItem(
                                     result = result,
                                     onClick = { onTrackClick(result) }
@@ -84,21 +96,27 @@ fun ArtistSearchScreen(
                         }
                     }
                 }
+
                 ArtistTab.PLAYLISTS -> {
-                    if (state.isLoading && playlists.isEmpty()) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    if (state.isLoading) {
+                        Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
                         }
                     } else if (playlists.isEmpty()) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Text("Плейлисты не найдены")
+                        Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(Icons.Default.QueueMusic, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.height(8.dp))
+                                Text("Альбомы пока не парсятся", textAlign = TextAlign.Center)
+                                Text("Доступны только треки", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                     } else {
                         LazyColumn {
-                            items(playlists) { playlist ->
+                            items(playlists, key = { it.pageUrl }) { playlist ->
                                 PlaylistSearchItem(
                                     playlist = playlist,
-                                    onClick = { onPlaylistClick(playlist) }
+                                    onClick = { onAlbumClick(playlist) }
                                 )
                             }
                         }
@@ -109,7 +127,6 @@ fun ArtistSearchScreen(
     }
 }
 
-// ✅ Компонент для плейлиста (только здесь!)
 @Composable
 fun PlaylistSearchItem(
     playlist: SearchItem.PlaylistResult,
@@ -120,10 +137,7 @@ fun PlaylistSearchItem(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (!playlist.coverUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = playlist.coverUrl,
@@ -142,32 +156,18 @@ fun PlaylistSearchItem(
             }
 
             Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-                Text(
-                    text = playlist.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Text(text = playlist.name, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (playlist.trackCount.isNotBlank()) {
-                    Text(
-                        text = "🎵 ${playlist.trackCount}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Text(text = "🎵 ${playlist.trackCount}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-
             Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
 
-// ✅ Компонент для трека (если нет в другом файле)
 @Composable
-fun SearchResultItem(
-    result: SearchResult,
-    onClick: () -> Unit
-) {
+fun SearchResultItem(result: SearchResult, onClick: () -> Unit) {
     ListItem(
         headlineContent = { Text(result.displayTitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = { Text(result.cleanTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant) },

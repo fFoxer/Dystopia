@@ -29,6 +29,10 @@ fun MainScreen(viewModel: MusicViewModel) {
     var currentArtistName by remember { mutableStateOf("") }
     val context = LocalContext.current
 
+    var showAlbumTracks by remember { mutableStateOf(false) }
+    var currentAlbumName by remember { mutableStateOf("") }
+    var currentAlbumUrl by remember { mutableStateOf("") }
+
     LaunchedEffect(Unit) {
         viewModel.resetNavigation.collect {
             selectedTab = 0
@@ -98,11 +102,28 @@ fun MainScreen(viewModel: MusicViewModel) {
                 showArtistSearch = false
                 showFullPlayer = true
             },
-            onPlaylistClick = { playlistResult ->
-                println("📁 Opening playlist: ${playlistResult.name}")
-                // TODO: Реализовать загрузку внешнего плейлиста
+            onAlbumClick = { album ->  // ✅ Добавь этот параметр!
+                currentAlbumName = album.name
+                currentAlbumUrl = album.pageUrl
+                viewModel.loadAlbumTracks(album.pageUrl, album.name)
+                showAlbumTracks = true
             }
         )
+        if (showAlbumTracks) {
+            AlbumTracksScreen(
+                viewModel = viewModel,
+                albumName = currentAlbumName,
+                onBack = {
+                    viewModel.exitAlbumView()
+                    showAlbumTracks = false
+                },
+                onTrackClick = { result ->
+                    viewModel.playSearchResult(result, context)
+                    showAlbumTracks = false
+                    showFullPlayer = true
+                }
+            )
+        }
     }
 }
 
