@@ -1,29 +1,23 @@
 package com.example.dystopia.ui
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import com.example.dystopia.MusicViewModel
-import com.example.dystopia.data.SearchResult
 import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-
-
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import com.example.dystopia.MusicViewModel
+import com.example.dystopia.data.SearchResult
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,7 +29,12 @@ fun AlbumTracksScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val tracks = state.searchResults
+    val playlists = viewModel.getAllPlaylistsForSelection()
     val context = LocalContext.current
+
+    // ✅ Состояния для диалога добавления трека
+    var showPlaylistDialog by remember { mutableStateOf(false) }
+    var selectedTrackForPlaylist by remember { mutableStateOf<SearchResult?>(null) }
 
     // Показываем сообщение о добавлении
     state.downloadMessage?.let { message ->
@@ -61,7 +60,7 @@ fun AlbumTracksScreen(
                     }
                 },
                 actions = {
-                    // ✅ Кнопка "Добавить все"
+                    // Кнопка "Добавить все треки альбома"
                     if (tracks.isNotEmpty()) {
                         IconButton(
                             onClick = {
@@ -70,7 +69,7 @@ fun AlbumTracksScreen(
                             enabled = !state.isLoading
                         ) {
                             Icon(
-                                Icons.Default.AddCircle,
+                                Icons.AutoMirrored.Filled.PlaylistAdd,
                                 "Добавить все",
                                 tint = MaterialTheme.colorScheme.primary
                             )
@@ -99,7 +98,6 @@ fun AlbumTracksScreen(
                 modifier = Modifier.padding(padding),
                 contentPadding = PaddingValues(bottom = 80.dp)
             ) {
-                // ✅ Индикатор добавления
                 if (state.isLoading) {
                     item {
                         LinearProgressIndicator(
@@ -108,30 +106,110 @@ fun AlbumTracksScreen(
                     }
                 }
 
+                // ✅ Список треков с меню для каждого
                 items(tracks, key = { it.cleanTitle }) { result ->
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                result.displayTitle,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        },
-                        supportingContent = {
-                            Text(
-                                result.cleanTitle,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        trailingContent = {
-                            Icon(Icons.Default.PlayArrow, "Play")
-                        },
-                        modifier = Modifier.clickable { onTrackClick(result) }
+                    AlbumTrackItemWithMenu(
+                        track = result,
+                        onClick = { onTrackClick(result) },
+                        onAddToPlaylist = {
+                            selectedTrackForPlaylist = result
+                            showPlaylistDialog = true
+                        }
                     )
                 }
             }
         }
+
+        // ✅ Диалог выбора плейлиста для отдельного трека
+        if (showPlaylistDialog && selectedTrackForPlaylist != null) {
+            PlaylistSelectionDialog(
+                playlists = playlists,
+                onPlaylistSelected = { playlistId ->
+                    selectedTrackForPlaylist?.let { track ->
+                        viewModel.addSingleTrackToPlaylist(track, playlistId)
+                    }
+                    showPlaylistDialog = false
+                    selectedTrackForPlaylist = null
+                },
+                onCreateNewPlaylist = { name ->
+                    selectedTrackForPlaylist?.let { track ->
+                        viewModel.createPlaylistAndAddTracks(name, listOf(track))
+                    }
+                    showPlaylistDialog = false
+                    selectedTrackForPlaylist = null
+                },
+                onDismiss = {
+                    showPlaylistDialog = false
+                    selectedTrackForPlaylist = null
+                }
+            )
+        }
     }
+}
+
+// ✅ Компонент трека альбома с меню (⋮)
+@Composable
+fun AlbumTrackItemWithMenu(
+    track: SearchResult,
+    onClick: () -> Unit,
+    onAddToPlaylist: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
+    ListItem(
+        headlineContent = {
+            Text(
+                track.displayTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        supportingContent = {
+            Text(
+                track.cleanTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        trailingContent = {
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        "Menu",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // ✅ Выпадающее меню
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Воспроизвести") },
+                        onClick = {
+                            showMenu = false
+                            onClick()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.PlayArrow, "Play")
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Добавить в плейлист") },
+                        onClick = {
+                            showMenu = false
+                            onAddToPlaylist()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.AutoMirrored.Filled.PlaylistAdd, "Add to playlist")
+                        }
+                    )
+                }
+            }
+        },
+        modifier = Modifier.clickable(onClick = onClick)
+    )
 }

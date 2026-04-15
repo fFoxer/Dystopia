@@ -1,6 +1,6 @@
 package com.example.dystopia.ui
 
-import android.util.Log
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -8,16 +8,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -36,15 +34,21 @@ fun ArtistSearchScreen(
     onAlbumClick: (SearchItem.PlaylistResult) -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
+    val tracks = viewModel.getArtistTracks()
+    val albums = viewModel.getArtistPlaylists()
+    val playlists = viewModel.getAllPlaylistsForSelection()
+    val context = LocalContext.current
 
-    // ✅ Берём данные ПРЯМО из текущего снапшота состояния
-    val tracks = state.artistSearchItems.filterIsInstance<SearchItem.TrackResult>().map { it.track }
-    val playlists = state.artistSearchItems.filterIsInstance<SearchItem.PlaylistResult>()
+    var showPlaylistDialog by remember { mutableStateOf(false) }
+    var selectedTrackForPlaylist by remember { mutableStateOf<SearchResult?>(null) }
+    var showAlbumPlaylistDialog by remember { mutableStateOf(false) }
+    var selectedAlbumForPlaylist by remember { mutableStateOf<SearchItem.PlaylistResult?>(null) }
 
-    // 🐞 Отладка: выводим в Logcat что реально пришло
-    LaunchedEffect(state.artistSearchItems) {
-        Log.d("ArtistScreen", "📦 Total items: ${state.artistSearchItems.size}")
-        Log.d("ArtistScreen", "🎵 Tracks: ${tracks.size}, 📁 Playlists: ${playlists.size}")
+    state.downloadMessage?.let { message ->
+        LaunchedEffect(message) {
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            viewModel.clearMessage()
+        }
     }
 
     Scaffold(
@@ -60,7 +64,6 @@ fun ArtistSearchScreen(
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {
-            // ✅ Вкладки
             TabRow(selectedTabIndex = if (state.activeArtistTab == ArtistTab.TRACKS) 0 else 1) {
                 Tab(
                     selected = state.activeArtistTab == ArtistTab.TRACKS,
@@ -70,53 +73,73 @@ fun ArtistSearchScreen(
                 Tab(
                     selected = state.activeArtistTab == ArtistTab.PLAYLISTS,
                     onClick = { viewModel.setArtistTab(ArtistTab.PLAYLISTS) },
-                    text = { Text("Альбомы (${playlists.size})") }
+                    text = { Text("Альбомы (${albums.size})") }
                 )
             }
 
-            // ✅ Контент с исправленной логикой
             when (state.activeArtistTab) {
                 ArtistTab.TRACKS -> {
-                    if (state.isLoading) {
-                        Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                    if (state.isLoading && tracks.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
                         }
                     } else if (tracks.isEmpty()) {
-                        Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Text("Треки не найдены 😔")
                         }
                     } else {
-                        LazyColumn {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 100.dp)
+                        ) {
                             items(tracks, key = { it.cleanTitle }) { result ->
-                                SearchResultItem(
+                                SearchResultItemWithMenu(
                                     result = result,
-                                    onClick = { onTrackClick(result) }
+                                    onClick = { onTrackClick(result) },
+                                    onAddToPlaylist = {
+                                        selectedTrackForPlaylist = result
+                                        showPlaylistDialog = true
+                                    }
                                 )
+                            }
+
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        "🎉 Все треки загружены (${tracks.size})",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
                 ArtistTab.PLAYLISTS -> {
-                    if (state.isLoading) {
-                        Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                    if (state.isLoading && albums.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             CircularProgressIndicator()
                         }
-                    } else if (playlists.isEmpty()) {
-                        Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Icon(Icons.Default.QueueMusic, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Spacer(Modifier.height(8.dp))
-                                Text("Альбомы пока не парсятся", textAlign = TextAlign.Center)
-                                Text("Доступны только треки", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                    } else if (albums.isEmpty()) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("Альбомы не найдены")
                         }
                     } else {
                         LazyColumn {
-                            items(playlists, key = { it.pageUrl }) { playlist ->
-                                PlaylistSearchItem(
-                                    playlist = playlist,
-                                    onClick = { onAlbumClick(playlist) }
+                            items(albums) { album ->
+                                AlbumItemWithMenu(
+                                    album = album,
+                                    onClick = { onAlbumClick(album) },
+                                    onAddToPlaylist = {
+                                        selectedAlbumForPlaylist = album
+                                        showAlbumPlaylistDialog = true
+                                    }
                                 )
                             }
                         }
@@ -124,26 +147,140 @@ fun ArtistSearchScreen(
                 }
             }
         }
+
+        if (showPlaylistDialog && selectedTrackForPlaylist != null) {
+            PlaylistSelectionDialog(
+                playlists = playlists,
+                onPlaylistSelected = { playlistId ->
+                    selectedTrackForPlaylist?.let { track ->
+                        viewModel.addSingleTrackToPlaylist(track, playlistId)
+                    }
+                    showPlaylistDialog = false
+                    selectedTrackForPlaylist = null
+                },
+                onCreateNewPlaylist = { name ->
+                    selectedTrackForPlaylist?.let { track ->
+                        viewModel.createPlaylistAndAddTracks(name, listOf(track))
+                    }
+                    showPlaylistDialog = false
+                    selectedTrackForPlaylist = null
+                },
+                onDismiss = {
+                    showPlaylistDialog = false
+                    selectedTrackForPlaylist = null
+                }
+            )
+        }
+
+        if (showAlbumPlaylistDialog && selectedAlbumForPlaylist != null) {
+            AlertDialog(
+                onDismissRequest = {
+                    showAlbumPlaylistDialog = false
+                    selectedAlbumForPlaylist = null
+                },
+                title = { Text("Добавить альбом в плейлист") },
+                text = { Text("Эта функция будет доступна скоро") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showAlbumPlaylistDialog = false
+                        selectedAlbumForPlaylist = null
+                    }) {
+                        Text("OK")
+                    }
+                }
+            )
+        }
     }
 }
 
 @Composable
-fun PlaylistSearchItem(
-    playlist: SearchItem.PlaylistResult,
-    onClick: () -> Unit
+fun SearchResultItemWithMenu(
+    result: SearchResult,
+    onClick: () -> Unit,
+    onAddToPlaylist: () -> Unit
 ) {
+    var showMenu by remember { mutableStateOf(false) }
+
+    ListItem(
+        headlineContent = {
+            Text(
+                result.displayTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        supportingContent = {
+            Text(
+                result.cleanTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        },
+        trailingContent = {
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        "Menu",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Воспроизвести") },
+                        onClick = {
+                            showMenu = false
+                            onClick()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.PlayArrow, "Play")
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Добавить в плейлист") },
+                        onClick = {
+                            showMenu = false
+                            onAddToPlaylist()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.PlaylistAdd, "Add to playlist")
+                        }
+                    )
+                }
+            }
+        },
+        modifier = Modifier.clickable(onClick = onClick)
+    )
+}
+
+@Composable
+fun AlbumItemWithMenu(
+    album: SearchItem.PlaylistResult,
+    onClick: () -> Unit,
+    onAddToPlaylist: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (!playlist.coverUrl.isNullOrBlank()) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (!album.coverUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = playlist.coverUrl,
-                    contentDescription = null,
+                    model = album.coverUrl,
+                    contentDescription = album.name,
                     modifier = Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    contentScale = ContentScale.Crop
                 )
             } else {
                 Box(
@@ -151,27 +288,65 @@ fun PlaylistSearchItem(
                         .background(MaterialTheme.colorScheme.primaryContainer),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Default.QueueMusic, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Icon(
+                        Icons.Default.QueueMusic,
+                        null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
                 }
             }
 
             Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-                Text(text = playlist.name, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (playlist.trackCount.isNotBlank()) {
-                    Text(text = "🎵 ${playlist.trackCount}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    text = album.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (album.trackCount.isNotBlank()) {
+                    Text(
+                        text = "🎵 ${album.trackCount}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
-            Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            Box {
+                IconButton(onClick = { showMenu = true }) {
+                    Icon(
+                        Icons.Default.MoreVert,
+                        "Menu",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                DropdownMenu(
+                    expanded = showMenu,
+                    onDismissRequest = { showMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Открыть альбом") },
+                        onClick = {
+                            showMenu = false
+                            onClick()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.FolderOpen, "Open")
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Добавить в плейлист") },
+                        onClick = {
+                            showMenu = false
+                            onAddToPlaylist()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.PlaylistAdd, "Add to playlist")
+                        }
+                    )
+                }
+            }
         }
     }
-}
-
-@Composable
-fun SearchResultItem(result: SearchResult, onClick: () -> Unit) {
-    ListItem(
-        headlineContent = { Text(result.displayTitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        supportingContent = { Text(result.cleanTitle, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-        trailingContent = { Icon(Icons.Default.PlayArrow, "Play") },
-        modifier = Modifier.clickable(onClick = onClick)
-    )
 }

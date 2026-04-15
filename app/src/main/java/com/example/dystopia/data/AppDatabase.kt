@@ -11,17 +11,24 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Update
 
-@Database(entities = [Playlist::class, PlaylistTrack::class], version = 1)
+@Database(entities = [Playlist::class, PlaylistTrack::class], version = 2)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun playlistDao(): PlaylistDao
 
     companion object {
-        @Volatile private var instance: AppDatabase? = null
+        @Volatile private var INSTANCE: AppDatabase? = null
+
         fun getDatabase(context: Context): AppDatabase {
-            return instance ?: synchronized(this) {
-                Room.databaseBuilder(context, AppDatabase::class.java, "music_db")
-                    .fallbackToDestructiveMigration() // Стирает БД при изменении структуры
-                    .build().also { instance = it }
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "music_db"
+                )
+                    .fallbackToDestructiveMigration()  // ✅ Автоматически обновит схему БД
+                    .build()
+                INSTANCE = instance
+                instance
             }
         }
     }
@@ -49,4 +56,6 @@ interface PlaylistDao {
 
     @Query("DELETE FROM playlist_tracks WHERE playlistId = :playlistId AND trackUrl = :trackUrl")
     suspend fun removeTrackFromPlaylist(playlistId: Long, trackUrl: String)
+
+
 }

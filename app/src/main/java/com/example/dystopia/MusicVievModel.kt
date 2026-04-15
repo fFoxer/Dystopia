@@ -811,7 +811,8 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             )
 
             try {
-                val items = selectedParser.searchArtistContent(artistName, limit = 100)
+                // ✅ Передаём большой лимит (сайт всё равно отдаст все треки)
+                val items = selectedParser.searchArtistContent(artistName, limit = 500)
 
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
@@ -1006,6 +1007,212 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 val context = getApplication<Application>().applicationContext
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, "❌ Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+    // ✅ Получить все плейлисты для диалога
+    fun getAllPlaylistsForSelection(): List<Playlist> {
+        return _uiState.value.playlists
+    }
+
+    // ✅ Добавить треки в выбранный плейлист
+    fun addTracksToSelectedPlaylist(playlistId: Long, tracks: List<SearchResult>, playlistName: String = "") {
+        viewModelScope.launch {
+            println("📥 [ADD TO PLAYLIST] Starting... Playlist ID: $playlistId, Tracks: ${tracks.size}")
+            _uiState.value = _uiState.value.copy(isLoading = true)
+
+            try {
+                val playlists = dao.getAllPlaylists()
+                val currentPlaylist = playlists.find { it.id == playlistId }
+                    ?: throw Exception("Плейлист не найден")
+
+                var addedCount = 0
+                var skippedCount = 0
+                var failedCount = 0
+
+                for ((index, track) in tracks.withIndex()) {
+                    println("🎵 [ADD] Processing track $index: ${track.displayTitle}")
+
+                    try {
+                        val trackDetails = selectedParser.getTrackDetails(track.pageUrl)
+                        val mp3Url = trackDetails.url
+
+                        if (!mp3Url.contains(".mp3", ignoreCase = true)) {
+                            println("⚠️ [ADD] Not an MP3 URL, skipping")
+                            failedCount++
+                            continue
+                        }
+
+                        val coverUrl = trackDetails.coverUrl ?: getCoverUrl(track.displayTitle)
+
+                        val newTrack = PlaylistTrack(
+                            playlistId = currentPlaylist.id,
+                            trackUrl = mp3Url,
+                            title = track.displayTitle,
+                            coverUrl = coverUrl
+                        )
+
+                        val exists = _uiState.value.playlistTracks.any {
+                            it.title == newTrack.title || it.trackUrl == newTrack.trackUrl
+                        }
+
+                        if (exists) {
+                            println("⏭️ [ADD] Skipping (already exists): ${track.displayTitle}")
+                            skippedCount++
+                            continue
+                        }
+
+                        dao.addTrackToPlaylist(newTrack)
+                        println("✅ [ADD] Added: ${track.displayTitle}")
+                        addedCount++
+
+                        delay(50)
+
+                    } catch (e: Exception) {
+                        println("❌ [ADD] Failed: ${track.displayTitle} - ${e.message}")
+                        failedCount++
+                    }
+                }
+
+                if (_uiState.value.selectedPlaylist?.id == currentPlaylist.id) {
+                    openPlaylist(currentPlaylist)
+                }
+
+                val message = "✅ Добавлено $addedCount треков${if (skippedCount > 0) " (пропущено $skippedCount)" else ""}${if (failedCount > 0) " (ошибок $failedCount)" else ""}"
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    downloadMessage = message
+                )
+
+                println("🎉 [ADD] Complete! Added: $addedCount, Skipped: $skippedCount, Failed: $failedCount")
+
+                val context = getApplication<Application>().applicationContext
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                }
+
+            } catch (e: Exception) {
+                println("❌ [ADD] Error: ${e.message}")
+                e.printStackTrace()
+
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Ошибка: ${e.message}"
+                )
+
+                val context = getApplication<Application>().applicationContext
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "❌ Ошибка: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    // ✅ Создать новый плейлист и добавить треки
+    fun createPlaylistAndAddTracks(playlistName: String, tracks: List<SearchResult>) {
+        viewModelScope.launch {
+            println("📁 [CREATE & ADD] Creating playlist: $playlistName")
+
+            try {
+                val newPlaylist = Playlist(
+                    id = 0,
+                    name = playlistName,
+                    description = "Добавлено из трека",
+                    coverUrl = null
+                )
+
+                dao.insertPlaylist(newPlaylist)
+
+                delay(100)
+                val playlists = dao.getAllPlaylists()
+                val createdPlaylist = playlists.find { it.name == playlistName }
+                    ?: playlists.maxByOrNull { it.id }
+
+                if (createdPlaylist != null) {
+                    println("📁 [CREATE & ADD] Playlist created with ID: ${createdPlaylist.id}")
+                    loadPlaylists()
+
+                    // Добавляем треки в новый плейлист
+                    addTracksToSelectedPlaylist(createdPlaylist.id, tracks, playlistName)
+                } else {
+                    throw Exception("Не удалось создать плейлист")
+                }
+
+            } catch (e: Exception) {
+                println("❌ [CREATE & ADD] Error: ${e.message}")
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Ошибка: ${e.message}"
+                )
+            }
+        }
+    }
+
+    // ✅ Добавить один трек в выбранный плейлист
+    // ✅ Добавить один трек в выбранный плейлист
+    fun addSingleTrackToPlaylist(track: SearchResult, playlistId: Long) {
+        viewModelScope.launch {
+            println("📥 [ADD SINGLE] Adding: ${track.displayTitle} to playlist $playlistId")
+
+            try {
+                val playlists = dao.getAllPlaylists()
+                val playlist = playlists.find { it.id == playlistId }
+                    ?: throw Exception("Плейлист не найден")
+
+                // Получаем MP3 URL и обложку
+                val trackDetails = selectedParser.getTrackDetails(track.pageUrl)
+                val mp3Url = trackDetails.url
+                val coverUrl = trackDetails.coverUrl ?: getCoverUrl(track.displayTitle)
+
+                if (!mp3Url.contains(".mp3", ignoreCase = true)) {
+                    throw Exception("Неверный формат: не MP3")
+                }
+
+                val newTrack = PlaylistTrack(
+                    playlistId = playlist.id,
+                    trackUrl = mp3Url,
+                    title = track.displayTitle,
+                    coverUrl = coverUrl
+                )
+
+                // Проверяем на дубликаты
+                val allPlaylistTracks = dao.getTracksByPlaylist(playlist.id)
+                val exists = allPlaylistTracks.any {
+                    it.title == newTrack.title || it.trackUrl == newTrack.trackUrl
+                }
+
+                if (exists) {
+                    _uiState.value = _uiState.value.copy(
+                        downloadMessage = "⚠️ Трек уже есть в плейлисте"
+                    )
+                } else {
+                    dao.addTrackToPlaylist(newTrack)
+                    _uiState.value = _uiState.value.copy(
+                        downloadMessage = "✅ Добавлено в '${playlist.name}'"
+                    )
+                    println("✅ [ADD SINGLE] Track added successfully")
+                }
+
+                // Показываем уведомление
+                val context = getApplication<Application>().applicationContext
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, _uiState.value.downloadMessage, Toast.LENGTH_SHORT).show()
+                }
+
+                delay(2000)
+                clearMessage()
+
+            } catch (e: Exception) {
+                println("❌ [ADD SINGLE] Error: ${e.message}")
+                _uiState.value = _uiState.value.copy(
+                    error = "Ошибка: ${e.message}"
+                )
+
+                val context = getApplication<Application>().applicationContext
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "❌ Ошибка: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
             }
         }

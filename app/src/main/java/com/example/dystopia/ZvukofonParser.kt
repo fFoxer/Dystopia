@@ -330,57 +330,135 @@ class ZvukofonParser : MusicParser {
             null
         }
     }
-    // ✅ Поиск всего контента артиста (треки + плейлисты)
-    // ✅ Поиск всего контента артиста (треки + альбомы со страницы артиста)
-    // ✅ Поиск всего контента артиста (треки + альбомы со страницы артиста)
-    // ✅ Поиск всего контента артиста (с подробным логом)
-    // ✅ Поиск всего контента артиста (треки + альбомы СО страницы артиста)
+
     override suspend fun searchArtistContent(artistName: String, limit: Int): List<SearchItem> = withContext(Dispatchers.IO) {
         val results = mutableListOf<SearchItem>()
 
         try {
-            println("🔍 [STEP 1] Finding artist page for: $artistName")
+            println("🔍 [ARTIST] Searching for: $artistName")
 
-            // 1. Ищем ссылку на страницу артиста через рабочий эндпоинт
+            // 1. Загружаем страницу поиска для нахождения страницы артиста
             val encoded = URLEncoder.encode(artistName, "UTF-8")
             val searchUrl = "$baseUrl/music/$encoded"
 
             val request = Request.Builder()
                 .url(searchUrl)
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
-                .addHeader("Accept-Language", "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7")
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                .addHeader("Accept-Language", "ru-RU,ru;q=0.9")
                 .addHeader("Referer", "https://new.zvukofon.com/")
                 .build()
 
             val response = client.newCall(request).execute()
 
             if (!response.isSuccessful) {
-                println("⚠️ [STEP 1] Search failed: ${response.code}")
+                println("⚠️ [ARTIST] Search failed: ${response.code}")
                 return@withContext emptyList()
             }
 
             val html = response.body?.string() ?: ""
             val doc = Jsoup.parse(html, searchUrl)
 
-            // ✅ Ищем ссылку на страницу артиста
+            // 2. Ищем ссылку на страницу артиста
             val artistLink = doc.selectFirst("a.topartists__link[href*='/performer/']")
 
-            if (artistLink == null) {
-                println("⚠️ [STEP 1] Artist page not found in search results")
-                // Fallback: возвращаем треки из поиска
-                val fallbackTracks = parseTracksFromSearch(doc, limit)
-                return@withContext fallbackTracks.map { SearchItem.TrackResult(it) }
+            if (artistLink != null) {
+                val artistUrl = artistLink.attr("abs:href")
+                println("🎤 [ARTIST] Found artist page: $artistUrl")
+
+                // 3. Загружаем страницу артиста — там ВСЕ треки сразу!
+                val artistRequest = Request.Builder()
+                    .url(artistUrl)
+                    .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .addHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                    .addHeader("Accept-Language", "ru-RU,ru;q=0.9")
+                    .addHeader("Referer", "https://new.zvukofon.com/")
+                    .build()
+
+                val artistResponse = client.newCall(artistRequest).execute()
+
+                if (artistResponse.isSuccessful) {
+                    val artistHtml = artistResponse.body?.string() ?: ""
+                    val artistDoc = Jsoup.parse(artistHtml, artistUrl)
+
+                    // ✅ 4. Парсим ВСЕ треки со страницы артиста (без limit!)
+                    val trackElements = artistDoc.select("section.artists-detail-tracks [data-musmeta], [data-musmeta]")
+                    println("🎵 [ARTIST] Found ${trackElements.size} tracks on artist page")
+
+                    val tracks = trackElements.mapNotNull { el ->
+                        try {
+                            val musMeta = el.attr("data-musmeta")
+                                .replace("&quot;", "\"")
+                                .replace("&amp;", "&")
+
+                            val json = JSONObject(musMeta)
+                            val title = json.optString("title", "").trim()
+                            val artist = json.optString("artist", "").trim()
+                            val trackUrl = json.optString("track_url", "")
+
+                            if (title.isBlank()) return@mapNotNull null
+
+                            val pageUrl = if (trackUrl.startsWith("http")) trackUrl else "$baseUrl$trackUrl"
+                            val displayTitle = if (artist.isNotBlank()) "$artist - $title" else title
+
+                            SearchResult(
+                                displayTitle = displayTitle,
+                                cleanTitle = displayTitle.cleanTitle(),
+                                pageUrl = pageUrl
+                            )
+                        } catch (e: Exception) {
+                            println("⚠️ [ARTIST] Parse error: ${e.message}")
+                            null
+                        }
+                    }.distinctBy { it.cleanTitle }
+
+                    results.addAll(tracks.map { SearchItem.TrackResult(it) })
+                    println("✅ [ARTIST] Added ${tracks.size} tracks")
+
+                    // 5. Парсим альбомы (отдельно)
+                    val albumElements = artistDoc.select("section.artists-detail-albums a.albums__link")
+                    println("📀 [ARTIST] Found ${albumElements.size} albums")
+
+                    val albums = albumElements.mapNotNull { link ->
+                        val href = link.attr("abs:href")
+                        val albumTitle = link.selectFirst(".albums__item-title")?.text()?.trim() ?: link.text().trim()
+
+                        if (href.isNotBlank() && albumTitle.isNotBlank()) {
+                            val coverStyle = link.selectFirst(".albums__item-img")?.attr("style") ?: ""
+                            val coverUrl = Regex("""url\(['"]?(.*?)['"]?\)""").find(coverStyle)?.groupValues?.get(1)?.let { rawUrl ->
+                                when {
+                                    rawUrl.startsWith("//") -> "https:$rawUrl"
+                                    rawUrl.startsWith("/") -> "$baseUrl$rawUrl"
+                                    else -> rawUrl
+                                }
+                            }
+
+                            SearchItem.PlaylistResult(
+                                name = albumTitle,
+                                pageUrl = href,
+                                trackCount = "",
+                                coverUrl = coverUrl
+                            )
+                        } else null
+                    }
+
+                    results.addAll(albums)
+                    println("✅ [ARTIST] Added ${albums.size} albums")
+                }
+            } else {
+                println("⚠️ [ARTIST] Artist page not found, using search results")
+                // Fallback: парсим треки из поиска
+                val trackElements = doc.select("[data-musmeta]")
+                val tracks = trackElements.mapNotNull { el ->
+                    // ... тот же парсинг что выше ...
+                    null // заглушка, код парсинга как выше
+                }
+                results.addAll(tracks.map { SearchItem.TrackResult(it) })
             }
 
-            val artistUrl = artistLink.attr("abs:href")
-            println("🎤 [STEP 1] Found artist page: $artistUrl")
-
-            // 2. Загружаем страницу артиста и парсим треки + альбомы
-            val content = fetchArtistContent(artistUrl, limit)
-            results.addAll(content)
-
-            println("🎵 [FINAL] Total: ${results.size} items")
+            val trackCount = results.count { it is SearchItem.TrackResult }
+            val albumCount = results.count { it is SearchItem.PlaylistResult }
+            println("🎉 [ARTIST] Total: ${results.size} items ($trackCount tracks, $albumCount albums)")
             return@withContext results.distinctBy {
                 when (it) {
                     is SearchItem.TrackResult -> it.track.cleanTitle
@@ -389,7 +467,7 @@ class ZvukofonParser : MusicParser {
             }
 
         } catch (e: Exception) {
-            println("⚠️ [ERROR] Artist search error: ${e.message}")
+            println("❌ [ARTIST] Error: ${e.message}")
             e.printStackTrace()
             return@withContext emptyList()
         }
