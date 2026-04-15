@@ -32,8 +32,9 @@ fun AlbumTracksScreen(
     val playlists = viewModel.getAllPlaylistsForSelection()
     val context = LocalContext.current
 
-    // ✅ Состояния для диалога добавления трека
-    var showPlaylistDialog by remember { mutableStateOf(false) }
+    // ✅ Состояния для диалогов
+    var showTrackPlaylistDialog by remember { mutableStateOf(false) }  // Для одного трека
+    var showAlbumPlaylistDialog by remember { mutableStateOf(false) }  // Для всех треков альбома
     var selectedTrackForPlaylist by remember { mutableStateOf<SearchResult?>(null) }
 
     // Показываем сообщение о добавлении
@@ -60,11 +61,11 @@ fun AlbumTracksScreen(
                     }
                 },
                 actions = {
-                    // Кнопка "Добавить все треки альбома"
+                    // ✅ Кнопка "Добавить все треки альбома"
                     if (tracks.isNotEmpty()) {
                         IconButton(
                             onClick = {
-                                viewModel.addAllTracksToPlaylist(tracks, albumName)
+                                showAlbumPlaylistDialog = true  // ✅ Открываем диалог
                             },
                             enabled = !state.isLoading
                         ) {
@@ -113,34 +114,54 @@ fun AlbumTracksScreen(
                         onClick = { onTrackClick(result) },
                         onAddToPlaylist = {
                             selectedTrackForPlaylist = result
-                            showPlaylistDialog = true
+                            showTrackPlaylistDialog = true
                         }
                     )
                 }
             }
         }
 
-        // ✅ Диалог выбора плейлиста для отдельного трека
-        if (showPlaylistDialog && selectedTrackForPlaylist != null) {
+        // ✅ Диалог для ОДНОГО трека
+        if (showTrackPlaylistDialog && selectedTrackForPlaylist != null) {
             PlaylistSelectionDialog(
                 playlists = playlists,
                 onPlaylistSelected = { playlistId ->
                     selectedTrackForPlaylist?.let { track ->
                         viewModel.addSingleTrackToPlaylist(track, playlistId)
                     }
-                    showPlaylistDialog = false
+                    showTrackPlaylistDialog = false
                     selectedTrackForPlaylist = null
                 },
                 onCreateNewPlaylist = { name ->
                     selectedTrackForPlaylist?.let { track ->
                         viewModel.createPlaylistAndAddTracks(name, listOf(track))
                     }
-                    showPlaylistDialog = false
+                    showTrackPlaylistDialog = false
                     selectedTrackForPlaylist = null
                 },
                 onDismiss = {
-                    showPlaylistDialog = false
+                    showTrackPlaylistDialog = false
                     selectedTrackForPlaylist = null
+                }
+            )
+        }
+
+
+        if (showAlbumPlaylistDialog) {
+            PlaylistSelectionDialog(
+                playlists = playlists,
+                onPlaylistSelected = { playlistId ->
+                    // ✅ Используем существующую функцию
+                    viewModel.addTracksToSelectedPlaylist(playlistId, tracks, albumName)
+                    showAlbumPlaylistDialog = false
+                },
+                onCreateNewPlaylist = { name ->
+                    // ✅ Создаём новый плейлист с именем альбома
+                    viewModel.createPlaylistAndAddTracks(name, tracks)
+                    showAlbumPlaylistDialog = false
+                },
+                onDismiss = {
+                    showAlbumPlaylistDialog = false
                 }
             )
         }
@@ -182,7 +203,6 @@ fun AlbumTrackItemWithMenu(
                     )
                 }
 
-                // ✅ Выпадающее меню
                 DropdownMenu(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false }
